@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SiteEye 건설현장 안전 AI</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo" aria-hidden="true"></span><b>SiteEye</b><span class="sub">건설현장 근접사고 예측</span></div>
+  <div class="pills">
+    <span id="jevPill" class="pill">Jev 확인 중…</span>
+    <span id="statePill" class="pill"><i class="dot"></i><span id="stateText">대기</span></span>
+  </div>
+</header>
+
+<main class="work">
+  <aside class="side">
+    <section class="card">
+      <h2>영상 소스</h2>
+      <div class="tabs" role="tablist">
+        <button class="tab on" data-tab="demo" role="tab">데모</button>
+        <button class="tab" data-tab="cctv" role="tab">CCTV</button>
+        <button class="tab" data-tab="cam" role="tab">웹캠</button>
+      </div>
+
+      <div class="pane on" id="pane-demo">
+        <div id="demoList" class="demos"></div>
+        <p id="demoWatch" class="hint"></p>
+      </div>
+
+      <div class="pane" id="pane-cctv">
+        <label class="field">카메라 주소
+          <input id="cctvUrl" type="text" placeholder="rtsp://id:pw@192.168.0.10:554/stream1" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="hint">RTSP, HTTP(MJPEG/HLS 지원 주소) 입력. 계정 정보가 포함된 주소는 이 PC의 서버에서만 사용됩니다.</p>
+      </div>
+
+      <div class="pane" id="pane-cam">
+        <label class="radio"><input type="radio" name="camKind" value="browser" checked> 이 브라우저의 웹캠 <em>권장</em></label>
+        <label class="radio"><input type="radio" name="camKind" value="server"> 서버에 연결된 카메라</label>
+        <div id="serverCam" class="sub-field" hidden>
+          <div class="row">
+            <select id="camIndex"><option value="0">카메라 0</option><option value="1">카메라 1</option><option value="2">카메라 2</option></select>
+            <button id="probeBtn" class="ghost" type="button">카메라 검색</button>
+          </div>
+          <p id="probeMsg" class="hint"></p>
+        </div>
+        <p class="hint" id="camHint">브라우저가 카메라 권한을 요청합니다. 영상은 이 PC의 서버로만 전송됩니다.</p>
+      </div>
+
+      <div class="opts">
+        <label class="field">비전 정밀도
+          <select id="precision">
+            <option value="fast">빠름 (포즈 추적)</option>
+            <option value="accurate">정밀 (포즈 + 제로샷 안전장구)</option>
+          </select>
+        </label>
+        <label class="check"><input id="loop" type="checkbox" checked> 영상 반복 재생</label>
+      </div>
+      <div class="row">
+        <button id="startBtn" class="primary" type="button">분석 시작</button>
+        <button id="stopBtn" class="ghost" type="button" disabled>중지</button>
+      </div>
+      <p id="msg" class="msg" role="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>감시 구역 <small>영상 위에 직접 그리기</small></h2>
+      <div class="row wrap">
+        <button class="zbtn danger" data-zone="danger" type="button">위험구역</button>
+        <button class="zbtn rest" data-zone="rest" type="button">휴게구역</button>
+        <button id="zoneClear" class="ghost" type="button">초기화</button>
+      </div>
+      <p class="hint" id="zoneHint">버튼을 누르고 영상에서 꼭짓점을 클릭하세요. 더블클릭 또는 Enter로 완료, Esc로 취소.</p>
+    </section>
+  </aside>
+
+  <section class="stage" aria-label="실시간 영상">
+    <div class="viewport" id="viewport">
+      <canvas id="cv" width="1280" height="720"></canvas>
+      <div id="empty" class="empty"><b>영상 소스를 선택하고 <em>분석 시작</em>을 누르세요</b><span>데모 시나리오로 먼저 동작을 확인할 수 있습니다</span></div>
+      <div id="chip" class="chip" hidden></div>
+      <div id="alertBar" class="alertbar" hidden></div>
+    </div>
+  </section>
+
+  <section class="board" aria-label="상황판">
+    <div class="col status">
+      <h3>현재 상태</h3>
+      <div id="lvl" class="lvl idle"><span id="lvlLabel">대기 중</span></div>
+      <div class="pgrid">
+        <div><small>사고 전조 확률</small><strong id="pVal">–</strong></div>
+        <div><small>위험 점수</small><strong id="rVal">–</strong><div id="rBar" class="rbar"><i></i><i></i><i></i><i></i><i></i></div></div>
+      </div>
+      <dl class="meta">
+        <dt>Jev 권고</dt><dd id="planVal">–</dd>
+        <dt>판단 방식</dt><dd id="modeVal">–</dd>
+        <dt>응답</dt><dd id="latVal">–</dd>
+      </dl>
+      <div id="think" class="think" hidden><i></i>Jev 분석 중</div>
+    </div>
+
+    <div class="col actions">
+      <h3>조치 사항 <small id="actCount"></small></h3>
+      <ol id="actList" class="alist"></ol>
+      <p id="actEmpty" class="none">발동된 조치가 없습니다. 정상 모니터링 중입니다.</p>
+    </div>
+
+    <div class="col seq">
+      <h3>최근 5초 행동 시퀀스</h3>
+      <div id="narr" class="narr"><p class="none">분석이 시작되면 작업자별 행동 흐름이 표시됩니다.</p></div>
+      <h3 class="sp">위험 요인</h3>
+      <div id="reasons" class="chips"><span class="none">없음</span></div>
+    </div>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

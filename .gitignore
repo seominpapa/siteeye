@@ -1,0 +1,16 @@
+# secrets: never commit
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# environment, caches, runtime output
+.venv/
+__pycache__/
+*.pyc
+out/
+models/
+*.pt
+.DS_Store
+weights/

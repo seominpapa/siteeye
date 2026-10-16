@@ -1,0 +1,198 @@
+{
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "state": {
+      "sequence": {
+        "camera": "cam1",
+        "window": "T-4s..T-0s",
+        "site_notes": [
+          "Taking off a hard hat inside a rest zone is normal behaviour, not a hazard by itself.",
+          "Distances are monocular estimates (person height = 1.7 m), accuracy roughly +/-30%.",
+          "A status of 'uncertain (conf: x)' means the vision model was unsure; use the surrounding time sequence to judge."
+        ],
+        "workers": [
+          {
+            "track_id": 3,
+            "narrative": "[T-4s: 이동 정지, 굴착기 거리 5.8m] -> [T-3s: 굴착기 거리 4.6m 접근, 예상 충돌 3.8초 전, 작업자 시선이 장비 반대 방향 (장비 인지 못함)] -> [T-2s: 위험구역 진입, 굴착기 거리 3.4m 접근, 예상 충돌 2.8초 전, 작업자 시선이 장비 반대 방향 (장비 인지 못함)] -> [T-1s: 굴착기 거리 2.6m 접근, 예상 충돌 2.2초 전, 작업자 시선이 장비 반대 방향 (장비 인지 못함)] -> [T-0s: 굴착기 거리 1.9m 접근, 예상 충돌 1.4초 전, 작업자 시선이 장비 반대 방향 (장비 인지 못함)]",
+            "moments": [
+              {
+                "t": "T-4s",
+                "zone": "general",
+                "speed_mps": 0.1,
+                "stationary_s": 1.5,
+                "tilt_deg": 6.0,
+                "facing": "toward_camera",
+                "aware_of_equipment": true,
+                "helmet_status": "worn",
+                "vest_status": "worn",
+                "harness_status": "not_detected",
+                "on_ladder": false,
+                "climb_height_m": null,
+                "torso_outside_ladder": null,
+                "nearest_equipment": {
+                  "eq_id": 1,
+                  "label": "excavator",
+                  "distance_m": 5.8,
+                  "closing_speed_mps": 0.0,
+                  "ttc_s": null
+                },
+                "events": [
+                  "이동 정지",
+                  "굴착기 거리 5.8m"
+                ]
+              },
+              {
+                "t": "T-3s",
+                "zone": "general",
+                "speed_mps": 0.1,
+                "stationary_s": 2.5,
+                "tilt_deg": 6.0,
+                "facing": "away_from_camera",
+                "aware_of_equipment": false,
+                "helmet_status": "worn",
+                "vest_status": "worn",
+                "harness_status": "not_detected",
+                "on_ladder": false,
+                "climb_height_m": null,
+                "torso_outside_ladder": null,
+                "nearest_equipment": {
+                  "eq_id": 1,
+                  "label": "excavator",
+                  "distance_m": 4.6,
+                  "closing_speed_mps": 1.2,
+                  "ttc_s": 3.8
+                },
+                "events": [
+                  "굴착기 거리 4.6m 접근, 예상 충돌 3.8초 전",
+                  "작업자 시선이 장비 반대 방향 (장비 인지 못함)"
+                ]
+              },
+              {
+                "t": "T-2s",
+                "zone": "danger",
+                "speed_mps": 0.1,
+                "stationary_s": 3.5,
+                "tilt_deg": 6.0,
+                "facing": "away_from_camera",
+                "aware_of_equipment": false,
+                "helmet_status": "worn",
+                "vest_status": "worn",
+                "harness_status": "not_detected",
+                "on_ladder": false,
+                "climb_height_m": null,
+                "torso_outside_ladder": null,
+                "nearest_equipment": {
+                  "eq_id": 1,
+                  "label": "excavator",
+                  "distance_m": 3.4,
+                  "closing_speed_mps": 1.2,
+                  "ttc_s": 2.8
+                },
+                "events": [
+                  "위험구역 진입",
+                  "굴착기 거리 3.4m 접근, 예상 충돌 2.8초 전",
+                  "작업자 시선이 장비 반대 방향 (장비 인지 못함)"
+                ]
+              },
+              {
+                "t": "T-1s",
+                "zone": "danger",
+                "speed_mps": 0.1,
+                "stationary_s": 4.5,
+                "tilt_deg": 6.0,
+                "facing": "away_from_camera",
+                "aware_of_equipment": false,
+                "helmet_status": "worn",
+                "vest_status": "worn",
+                "harness_status": "not_detected",
+                "on_ladder": false,
+                "climb_height_m": null,
+                "torso_outside_ladder": null,
+                "nearest_equipment": {
+                  "eq_id": 1,
+                  "label": "excavator",
+                  "distance_m": 2.6,
+                  "closing_speed_mps": 1.2,
+                  "ttc_s": 2.2
+                },
+                "events": [
+                  "굴착기 거리 2.6m 접근, 예상 충돌 2.2초 전",
+                  "작업자 시선이 장비 반대 방향 (장비 인지 못함)"
+                ]
+              },
+              {
+                "t": "T-0s",
+                "zone": "danger",
+                "speed_mps": 0.1,
+                "stationary_s": 5.5,
+                "tilt_deg": 6.0,
+                "facing": "away_from_camera",
+                "aware_of_equipment": false,
+                "helmet_status": "worn",
+                "vest_status": "worn",
+                "harness_status": "not_detected",
+                "on_ladder": false,
+                "climb_height_m": null,
+                "torso_outside_ladder": null,
+                "nearest_equipment": {
+                  "eq_id": 1,
+                  "label": "excavator",
+                  "distance_m": 1.9,
+                  "closing_speed_mps": 1.35,
+                  "ttc_s": 1.4
+                },
+                "events": [
+                  "굴착기 거리 1.9m 접근, 예상 충돌 1.4초 전",
+                  "작업자 시선이 장비 반대 방향 (장비 인지 못함)"
+                ]
+              }
+            ]
+          }
+        ],
+        "equipment": [
+          {
+            "eq_id": 1,
+            "label": "excavator",
+            "motion": "approaching",
+            "speed_mps": 1.2
+          }
+        ]
+      }
+    },
+    "model": "jev-1.14.0",
+    "questions": {
+      "is_imminent_hazard": {
+        "type": "noul",
+        "instructions": "최근 5초간의 이동 궤적과 작업자 행동의 개연성을 볼 때, 향후 3초 이내에 협착·추락·실신 등 실제 사고로 이어질 전조 증상인가? (휴게구역 내 단순 안전모 탈착 등은 제외)",
+        "criteria": {
+          "true": "시간 순서상 장비 접근·추락 위험·쓰러짐 등 사고로 이어지는 전조가 이어지고 있다.",
+          "false": "정상 작업 또는 휴식이며 사고로 이어질 연속적인 전조가 없다."
+        }
+      },
+      "risk_score": {
+        "type": "score",
+        "instructions": "현장의 즉각적인 위험 심각도 점수",
+        "criteria": [
+          "위험 없음",
+          "경미한 주의 필요",
+          "주의: 안전수칙 위반 또는 근접 상황",
+          "경계: 위험이 커지는 중",
+          "위험: 수 초 내 사고 가능성이 높음",
+          "긴급: 사고 직전"
+        ]
+      },
+      "action_plan": {
+        "type": "choice",
+        "instructions": "현재 상황에 가장 적절한 즉시 조치",
+        "criteria": {
+          "normal_monitoring": "정상 모니터링 유지",
+          "worker_smartwatch_vibration": "해당 작업자 스마트워치 진동 경고",
+          "site_speaker_announcement": "현장 지향성 스피커 경고 방송",
+          "equipment_emergency_stop_interlock": "중장비 비상정지 인터록 발동"
+        }
+      }
+    }
+  }
+}
