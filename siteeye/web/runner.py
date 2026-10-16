@@ -306,6 +306,10 @@ class AnalysisRunner:
                 self._set_status("starting", "비전 모델을 불러오는 중… (처음에는 수십 초 걸릴 수 있습니다)")
                 self._ex = await loop.run_in_executor(self.mgr.pool, self.mgr.acquire_extractor, req.precision)
                 proc = SpatialFeatureProcessor(self.st)
+                why = {"B": "제로샷 안전장구 모델(Track B)을 불러오지 못했습니다. git과 인터넷 연결, 서버 로그를 확인하세요.",
+                       "C": "현장 PPE 모델(Track C)을 불러오지 못했습니다. models/custom_ppe.pt 를 확인하세요."}
+                for k in self._ex.missing:
+                    self._emit({"kind": "notice", "ts": time.time(), "text": f"{why.get(k, k)} 가능한 모델로만 분석합니다."})
             self._set_status("running", "분석 중", source=req.kind, demo=req.demo_id, live=self.live,
                              sim=True if scripted else (False if req.kind == "demo" else None))
             timeout = self.st.session_max_s if self.public else None

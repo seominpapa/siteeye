@@ -121,7 +121,7 @@ legacy/                  # 초기 버전(v1) 코드 보관 (사용하지 않음)
 
 ## 3. 설치 방법
 
-**요구사항**: Python 3.10 이상 (3.14에서 테스트), macOS/Linux/Windows. GPU는 선택이며 Apple Silicon(MPS)과 NVIDIA(CUDA)를 자동 사용하고 없으면 CPU로 동작합니다. TypeSafe API 키가 있어야 실제 Jev를 호출할 수 있습니다(없으면 오프라인 대체 응답기로 데모 가능).
+**요구사항**: Python 3.10 이상 (3.14에서 테스트), **git**(CLIP 설치에 필요), 인터넷 연결(첫 실행 시 모델 다운로드), macOS/Linux/Windows. GPU는 선택이며 Apple Silicon(MPS)과 NVIDIA(CUDA)를 자동 사용하고 없으면 CPU로 동작합니다. TypeSafe API 키가 있어야 실제 Jev를 호출할 수 있고, 없어도 오프라인 대체 응답기로 전체 흐름을 볼 수 있습니다.
 
 ```bash
 git clone https://github.com/seominpapa/sitesee.git
@@ -129,13 +129,26 @@ cd sitesee
 
 python3 -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements.txt      # 새 환경 기준 약 20초~수 분 (torch 포함)
 
-cp .env.example .env                 # 그리고 .env 에 TYPESAFE_API_KEY=... 입력
+cp .env.example .env                 # 그리고 .env 에 TYPESAFE_API_KEY=... 입력 (없어도 실행은 됨)
+python main.py --web                 # http://127.0.0.1:8000
 ```
 
+**처음 실행할 때 일어나는 일** (새 클론에서 검증):
+
+| 상황 | 동작 |
+|---|---|
+| API 키 없음 | 오류 없이 실행. 화면 상단에 `Jev 오프라인 대체 응답기 (실제 모델 아님)`. `--source` CLI는 키 설정 또는 `--offline` 안내 후 종료 |
+| 키가 틀림 (401/403) | 영상 분석은 계속되고, 화면에 "Jev API 키가 거부되었습니다" 안내가 뜨며 같은 호출을 반복하지 않음 |
+| 시뮬레이션 데모 | 모델 다운로드 없이 바로 동작 |
+| 첫 "영상 실처리"/웹캠 (빠름) | 포즈 모델 `yolo11m-pose.pt` (약 42MB)를 `models/`에 자동 다운로드. 화면에 "비전 모델을 불러오는 중…" 표시, 약 15초 |
+| 첫 "정밀" | 제로샷 모델 `yolov8s-worldv2.pt` (약 26MB)와 CLIP 가중치(약 340MB)를 자동 다운로드, 약 20초~수 분 |
+| 정밀 모델을 못 불러옴 | 포즈 추적만으로 계속 실행하고, 화면에 어떤 모델이 빠졌는지 안내 |
+| Python 3.9 이하 | `Python 3.10 or newer is required` 안내 후 종료 |
+
 - **API 키**는 `.env`(git에서 제외됨) 또는 터미널의 `export TYPESAFE_API_KEY=...` 로만 전달합니다. 코드와 로그에는 저장·출력하지 않습니다. 터미널 환경변수가 `.env`보다 우선합니다. 키는 [TypeSafe 콘솔](https://console.typesafe.ai/keys)에서 발급받습니다.
-- **모델 가중치**는 처음 실행할 때 `models/` 에 자동으로 내려받습니다(`yolo11m-pose.pt` 약 42MB, `yolov8s-worldv2.pt` 약 26MB, 정밀 모드의 CLIP 약 340MB). 저장소에는 포함되지 않습니다.
+- **모델 가중치**는 저장소에 포함되지 않으며 `models/` 에 자동으로 내려받습니다(`.gitignore`).
 - **환경변수**: `TYPESAFE_API_KEY`, `TYPESAFE_API_URL`(기본 `https://api.typesafe.ai/v1/systemone`), `SITEEYE_TRACKS`(기본 `A,B,C`), `SITEEYE_DEVICE`(`mps`/`cuda:0`/`cpu`), `SITEEYE_POSE_WEIGHTS`, `SITEEYE_WORLD_WEIGHTS`, `SITEEYE_PPE_WEIGHTS`, `SITEEYE_CAMERA`. 공개 모드: `SITEEYE_PUBLIC`, `SITEEYE_PUBLIC_ORIGIN`, `SITEEYE_SOURCE_URL`, `SITEEYE_MAX_SESSIONS`, `SITEEYE_MAX_DEMO_SESSIONS`, `SITEEYE_SESSION_SECONDS`, `SITEEYE_SESSION_JEV_CALLS`, `SITEEYE_DAILY_JEV_CALLS`, `SITEEYE_IP_SESSIONS_PER_HOUR`.
 
 ### 실행

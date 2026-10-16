@@ -146,6 +146,7 @@ class HybridVisionExtractor:
         self.label_min_conf = label_min_conf or {}
         self._aux_last: list[Detection] = []
         self.slot = tracks.get("A")  # the per-session pose model, so a pool can take it back after the session
+        self.missing: list[str] = []  # requested tracks that could not be loaded (the UI tells the visitor)
 
     @property
     def active(self) -> str:
