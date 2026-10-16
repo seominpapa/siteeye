@@ -1,6 +1,6 @@
-# sitesee
+# siteeye
 
-건설 현장 CCTV 영상에서 **최근 5초의 행동 흐름**을 뽑아 TypeSafe AI의 의사결정 모델 **Jev 1.14**에 보내고, 협착·추락·실신 같은 **사고 전조(near-miss)** 를 미리 판단해 조치를 안내하는 파이프라인과 로컬 웹앱입니다. (코드 패키지 이름은 `siteeye`, 화면에는 "SiteEye"로 표시됩니다.)
+건설 현장 CCTV 영상에서 **최근 5초의 행동 흐름**을 뽑아 TypeSafe AI의 의사결정 모델 **Jev 1.14**에 보내고, 협착·추락·실신 같은 **사고 전조(near-miss)** 를 미리 판단해 조치를 안내하는 파이프라인과 로컬 웹앱입니다.
 
 | 데모 ② 굴착기 접근 + 작업자 등 돌림 | 데모 ③ 안전고리 미결속 → Jev가 이미지로 안전장구 확인 (실제 YOLO + 실제 Jev) |
 |---|---|
@@ -205,8 +205,8 @@ legacy/                  # 초기 버전(v1) 코드 보관 (사용하지 않음)
 **요구사항**: Python 3.10 이상 (3.14에서 테스트), **git**(CLIP 설치에 필요), 인터넷 연결(첫 실행 시 모델 다운로드), macOS/Linux/Windows. GPU는 선택이며 Apple Silicon(MPS)과 NVIDIA(CUDA)를 자동 사용하고 없으면 CPU로 동작합니다. TypeSafe API 키가 있어야 실제 Jev를 호출할 수 있고, 없어도 오프라인 대체 응답기로 전체 흐름을 볼 수 있습니다.
 
 ```bash
-git clone https://github.com/seominpapa/sitesee.git
-cd sitesee
+git clone https://github.com/seominpapa/siteeye.git
+cd siteeye
 
 python3 -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate

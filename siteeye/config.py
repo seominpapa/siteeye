@@ -81,7 +81,7 @@ class Settings(BaseModel):
     max_jev_calls_per_session: int = 200
     daily_jev_calls: int = 4000  # after this, new sessions use the offline stand-in (labelled as such)
     ip_sessions_per_hour: int = 6
-    source_url: str = "https://github.com/seominpapa/sitesee"
+    source_url: str = "https://github.com/seominpapa/siteeye"
     allowed_origin: str | None = None  # e.g. https://demo.example.com ; default: same host as the request
 
     # --- action routing ---

@@ -28,11 +28,11 @@
 ```bash
 TYPESAFE_API_KEY=...
 SITEEYE_PUBLIC_ORIGIN=https://demo.example.com   # WebSocket Origin 검사에 쓰는 실제 주소
-SITEEYE_SOURCE_URL=https://github.com/seominpapa/sitesee
+SITEEYE_SOURCE_URL=https://github.com/seominpapa/siteeye
 ```
 
 ```bash
-cd siteview   # 클론한 폴더
+cd siteeye   # 클론한 폴더
 .venv/bin/python main.py --web --public           # 기본: http://127.0.0.1:8000
 ```
 
@@ -95,27 +95,27 @@ Cloudflare는 WebSocket을 기본으로 지원합니다(대시보드 Network 설
 
 ## 3. 앱을 항상 켜 두기 (launchd)
 
-`~/Library/LaunchAgents/com.sitesee.demo.plist` (경로는 본인 환경에 맞게 수정):
+`~/Library/LaunchAgents/com.siteeye.demo.plist` (경로는 본인 환경에 맞게 수정):
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.sitesee.demo</string>
-  <key>WorkingDirectory</key><string>/Users/USER/siteview</string>
+  <key>Label</key><string>com.siteeye.demo</string>
+  <key>WorkingDirectory</key><string>/Users/USER/siteeye</string>
   <key>ProgramArguments</key><array>
-    <string>/Users/USER/siteview/.venv/bin/python</string>
+    <string>/Users/USER/siteeye/.venv/bin/python</string>
     <string>main.py</string><string>--web</string><string>--public</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/Users/USER/siteview/out/app.log</string>
-  <key>StandardErrorPath</key><string>/Users/USER/siteview/out/app.log</string>
+  <key>StandardOutPath</key><string>/Users/USER/siteeye/out/app.log</string>
+  <key>StandardErrorPath</key><string>/Users/USER/siteeye/out/app.log</string>
 </dict></plist>
 ```
 
 ```bash
-launchctl load ~/Library/LaunchAgents/com.sitesee.demo.plist
+launchctl load ~/Library/LaunchAgents/com.siteeye.demo.plist
 ```
 
 앱은 프로젝트 폴더의 `.env` 를 직접 읽으므로 plist에 키를 넣지 않아도 됩니다. Mac mini가 잠들지 않도록 시스템 설정 → 에너지 절약에서 "디스플레이가 꺼져 있을 때 자동으로 잠자기 방지"를 켜세요.
@@ -137,6 +137,6 @@ launchctl load ~/Library/LaunchAgents/com.sitesee.demo.plist
 
 ## 6. 운영
 
-- 업데이트: `git pull` → 앱 재시작(`launchctl kickstart -k gui/$(id -u)/com.sitesee.demo`). 코드를 바꿨다면 공개 저장소에도 같은 코드를 반영해야 합니다.
+- 업데이트: `git pull` → 앱 재시작(`launchctl kickstart -k gui/$(id -u)/com.siteeye.demo`). 코드를 바꿨다면 공개 저장소에도 같은 코드를 반영해야 합니다.
 - 로그: `out/app.log`. 영상·이미지는 기록되지 않습니다.
 - 키가 노출되면 TypeSafe 콘솔에서 폐기·재발급하고 `.env` 만 교체한 뒤 앱을 재시작합니다.
