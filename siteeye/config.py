@@ -58,6 +58,17 @@ class Settings(BaseModel):
     snapshot_interval_s: float = 1.0
     site_notes: list[str] = Field(default_factory=lambda: list(DEFAULT_SITE_NOTES))
 
+    # --- public hosting (python main.py --web --public) ---
+    public: bool = False
+    max_sessions: int = 2  # concurrent webcam/video sessions; one inference slot (YOLO + its own tracker) each
+    max_demo_sessions: int = 8  # scripted demos need no YOLO slot, so they get their own, larger cap
+    session_max_s: int = 180
+    max_jev_calls_per_session: int = 200
+    daily_jev_calls: int = 4000  # after this, new sessions use the offline stand-in (labelled as such)
+    ip_sessions_per_hour: int = 6
+    source_url: str = "https://github.com/seominpapa/sitesee"
+    allowed_origin: str | None = None  # e.g. https://demo.example.com ; default: same host as the request
+
     # --- action routing ---
     p_immediate: float = 0.80
     p_review: float = 0.50
@@ -73,6 +84,12 @@ class Settings(BaseModel):
             ("api_url", "TYPESAFE_API_URL"), ("tracks", "SITEEYE_TRACKS"), ("device", "SITEEYE_DEVICE"),
             ("pose_weights", "SITEEYE_POSE_WEIGHTS"), ("world_weights", "SITEEYE_WORLD_WEIGHTS"),
             ("ppe_weights", "SITEEYE_PPE_WEIGHTS"), ("camera", "SITEEYE_CAMERA"),
+            ("public", "SITEEYE_PUBLIC"), ("max_sessions", "SITEEYE_MAX_SESSIONS"),
+            ("max_demo_sessions", "SITEEYE_MAX_DEMO_SESSIONS"),
+            ("session_max_s", "SITEEYE_SESSION_SECONDS"), ("daily_jev_calls", "SITEEYE_DAILY_JEV_CALLS"),
+            ("max_jev_calls_per_session", "SITEEYE_SESSION_JEV_CALLS"),
+            ("ip_sessions_per_hour", "SITEEYE_IP_SESSIONS_PER_HOUR"),
+            ("source_url", "SITEEYE_SOURCE_URL"), ("allowed_origin", "SITEEYE_PUBLIC_ORIGIN"),
         ]:
             if env.get(var):
                 kw[field] = env[var]

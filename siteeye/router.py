@@ -63,8 +63,8 @@ class WebhookSink:
 
 
 class SafetyActionRouter:
-    def __init__(self, st: Settings, sinks: list[ActionSink] | None = None):
-        self.st = st
+    def __init__(self, st: Settings, sinks: list[ActionSink] | None = None, save_snapshots: bool = True):
+        self.st, self.save_snapshots = st, save_snapshots  # public hosting: never write frames to disk
         self.sinks = [ConsoleSink()] if sinks is None else sinks
         self._last: dict[str, float] = {}
 
@@ -78,7 +78,7 @@ class SafetyActionRouter:
                 kinds.insert(0, "equipment_estop")
             acts = [Action(kind=k, tier="immediate", reason=why, **base) for k in kinds]
         elif d.p_hazard >= st.p_review:
-            snap = self._save_snapshot(roi) if roi else None
+            snap = self._save_snapshot(roi) if (roi and self.save_snapshots) else None
             acts = [Action(kind="dashboard_review", tier="review", reason=why, **base,
                            payload={"sequence": seq.model_dump(mode="json"), "snapshot": snap,
                                     "roi_box": d.roi_box.model_dump() if d.roi_box else None})]

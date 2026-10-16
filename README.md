@@ -51,9 +51,11 @@ siteeye/
   pipeline.py            # 비동기 오케스트레이션과 스로틀링
   mock.py                # 시나리오 4종, 오프라인 대체 응답기
   source.py              # RTSP/HTTP/파일/웹캠 최신 프레임 리더
-  web/                   # 웹앱: app.py(API·웹소켓) runner.py(분석 루프) demo.py(데모) static/(화면)
+  web/                   # 웹앱: app.py(API·웹소켓·보안) sessions.py(방문자 세션·한도) runner.py(분석 루프) demo.py(데모) static/(화면)
 demo/street_bus.mp4      # 실제 YOLO 데모용 샘플 영상
 docs/examples/           # --mock 이 만든 Jev 요청 JSON (텍스트 모드 vs 이미지 폴백)
+docs/DEPLOY.md           # 공개 데모 배포 가이드 (Mac mini + Cloudflare Tunnel)
+LICENSE                  # GNU AGPL-3.0
 legacy/                  # 초기 버전(v1) 코드 보관 (사용하지 않음)
 ```
 
@@ -134,7 +136,7 @@ cp .env.example .env                 # 그리고 .env 에 TYPESAFE_API_KEY=... �
 
 - **API 키**는 `.env`(git에서 제외됨) 또는 터미널의 `export TYPESAFE_API_KEY=...` 로만 전달합니다. 코드와 로그에는 저장·출력하지 않습니다. 터미널 환경변수가 `.env`보다 우선합니다. 키는 [TypeSafe 콘솔](https://console.typesafe.ai/keys)에서 발급받습니다.
 - **모델 가중치**는 처음 실행할 때 `models/` 에 자동으로 내려받습니다(`yolo11m-pose.pt` 약 42MB, `yolov8s-worldv2.pt` 약 26MB, 정밀 모드의 CLIP 약 340MB). 저장소에는 포함되지 않습니다.
-- **환경변수**: `TYPESAFE_API_KEY`, `TYPESAFE_API_URL`(기본 `https://api.typesafe.ai/v1/systemone`), `SITEEYE_TRACKS`(기본 `A,B,C`), `SITEEYE_DEVICE`(`mps`/`cuda:0`/`cpu`), `SITEEYE_POSE_WEIGHTS`, `SITEEYE_WORLD_WEIGHTS`, `SITEEYE_PPE_WEIGHTS`, `SITEEYE_CAMERA`.
+- **환경변수**: `TYPESAFE_API_KEY`, `TYPESAFE_API_URL`(기본 `https://api.typesafe.ai/v1/systemone`), `SITEEYE_TRACKS`(기본 `A,B,C`), `SITEEYE_DEVICE`(`mps`/`cuda:0`/`cpu`), `SITEEYE_POSE_WEIGHTS`, `SITEEYE_WORLD_WEIGHTS`, `SITEEYE_PPE_WEIGHTS`, `SITEEYE_CAMERA`. 공개 모드: `SITEEYE_PUBLIC`, `SITEEYE_PUBLIC_ORIGIN`, `SITEEYE_SOURCE_URL`, `SITEEYE_MAX_SESSIONS`, `SITEEYE_MAX_DEMO_SESSIONS`, `SITEEYE_SESSION_SECONDS`, `SITEEYE_SESSION_JEV_CALLS`, `SITEEYE_DAILY_JEV_CALLS`, `SITEEYE_IP_SESSIONS_PER_HOUR`.
 
 ### 실행
 
@@ -189,6 +191,25 @@ python main.py --source site.mp4      # 웹 없이 터미널에서 영상/RTSP/�
 
 ## 5. 그 외 필요한 사항
 
+### 공개 데모로 호스팅하기 (Cloudflare Tunnel)
+
+방문자가 데모를 보고 **자기 웹캠**으로 직접 시험해 보는 공개 서비스로 올리려면 `--public` 모드를 씁니다. 자세한 절차(터널 설정, launchd, 체크리스트)는 **[docs/DEPLOY.md](docs/DEPLOY.md)** 를 보세요.
+
+```bash
+python main.py --web --public        # 127.0.0.1 에서만 열리고, Cloudflare Tunnel이 HTTPS로 공개
+```
+
+| 공개 모드에서 | 동작 |
+|---|---|
+| 방문자 분리 | 방문자(브라우저 탭)마다 독립된 분석 세션. 동시 영상·웹캠 2명, 데모 8명 |
+| 웹캠 | **방문자 자신의 웹캠**을 브라우저가 권한 요청 후 서버로 업로드해 분석 (HTTPS 필요) |
+| 데모 | 각 데모는 방문자마다 **처음 한 번은 사용량 한도와 관계없이 실행 가능**. 같은 데모 반복은 시간당 한도에 포함 |
+| 제한 | 세션 3분, 세션당 Jev 200회, 하루 4000회(초과 시 오프라인 대체 응답기로 표시), IP당 시간당 6회 |
+| 저장 | **영상·이미지를 디스크에 쓰지 않음.** 스냅샷도 방문자 브라우저 메모리로만 전달 |
+| 차단 | CCTV 주소 입력, 서버 카메라(서버가 임의 주소에 접속하는 것을 막기 위함). CCTV는 소스를 받아 로컬에서 실행 |
+| 화면 | 시작 전 안내·동의, 남은 시간, 소스 코드(AGPL-3.0) 링크 |
+| 보안 | WebSocket Origin 검사, CSP 등 보안 헤더, Cloudflare 클라이언트 IP 사용 |
+
 ### 보안·개인정보
 
 - 웹 서버는 기본 `127.0.0.1` 에만 열립니다. **인증이 없으므로** `--host 0.0.0.0` 은 신뢰할 수 있는 내부망에서만, 가능하면 리버스 프록시 인증과 함께 쓰세요.
@@ -222,6 +243,6 @@ python main.py --source site.mp4      # 웹 없이 터미널에서 영상/RTSP/�
 
 ### 라이선스 주의
 
-- 이 저장소에는 별도 라이선스 파일이 없습니다(모든 권리 보유 상태). 공개·배포 전에 라이선스를 정하세요.
+- 이 프로젝트는 **GNU AGPL-3.0**(`LICENSE`)으로 배포합니다. 서비스에 쓰는 Ultralytics YOLO가 AGPL-3.0이라, 방문자에게 웹으로 제공할 때는 서비스 전체의 소스를 공개해야 하기 때문입니다. 서비스 화면에 소스 코드 링크를 두고, 배포 코드와 공개 코드를 같게 유지하세요. 소스를 공개하지 않고 상용으로 쓰려면 Ultralytics Enterprise License가 필요합니다.
 - **Ultralytics YOLO(YOLO11, YOLO-World)는 AGPL-3.0**입니다. 이를 사용하는 서비스를 외부에 제공하거나 상용 제품에 넣을 때는 소스 공개 의무 또는 Ultralytics Enterprise 라이선스를 검토해야 합니다. `demo/street_bus.mp4` 도 Ultralytics 샘플 이미지(`bus.jpg`)로 만든 데모용 영상입니다.
 - 사용한 외부 서비스: TypeSafe AI Jev API ([문서](https://docs.typesafe.ai)).

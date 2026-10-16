@@ -9,8 +9,26 @@ const KO = {
 };
 const COLOR = { ok: "#3fb950", warn: "#f0b429", danger: "#f85149", equip: "#ff9f43", roi: "#e879f9" };
 
+// one id per browser tab: the server keeps each visitor's analysis session separate
+const SID = (() => {
+  try {
+    let v = sessionStorage.getItem("sid");
+    if (!v) { v = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()).replace(/[^A-Za-z0-9_-]/g, ""); sessionStorage.setItem("sid", v); }
+    return v;
+  } catch (_) { return "tab" + Math.random().toString(36).slice(2, 12) + Date.now(); }
+})();
+// one id per browser (survives tabs): remembers which demos this visitor has already run
+const VID = (() => {
+  try {
+    let v = localStorage.getItem("vid");
+    if (!v) { v = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()).replace(/[^A-Za-z0-9_-]/g, ""); localStorage.setItem("vid", v); }
+    return v;
+  } catch (_) { return SID; }
+})();
+const wsUrl = (path) => (location.protocol === "https:" ? "wss://" : "ws://") + location.host + path + "?sid=" + encodeURIComponent(SID);
+
 const S = {
-  tab: "demo", demo: null, demos: [], status: { state: "idle" }, meta: null, zones: { danger: [], rest: [] },
+  public: false, done: new Set(), tab: "demo", demo: null, demos: [], status: { state: "idle" }, meta: null, zones: { danger: [], rest: [] },
   drawing: null, draft: [], lastDecision: null, roi: null, alertUntil: 0, camStream: null, ingest: null, sendTimer: null,
 };
 
@@ -34,6 +52,7 @@ function reasonKo(r) {
 function msg(text, err = false) { const m = $("msg"); m.textContent = text || ""; m.className = "msg" + (err ? " err" : ""); }
 
 async function api(path, body) {
+  path += (path.includes("?") ? "&" : "?") + "sid=" + encodeURIComponent(SID) + "&vid=" + encodeURIComponent(VID);
   const r = await fetch(path, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
   if (!r.ok) { let d = ""; try { d = (await r.json()).detail; } catch (_) {} throw new Error(d || r.statusText); }
   return r.json();
@@ -58,6 +77,7 @@ function renderDemos() {
   S.demos.forEach((d) => {
     const b = el("button", "demo" + (S.demo === d.id ? " on" : ""));
     b.type = "button"; b.append(el("b", null, d.title), el("span", null, d.expect));
+    if (S.done.has(d.id)) b.append(el("em", "done", "✓ 실행함"));
     b.addEventListener("click", () => { S.demo = d.id; renderDemos(); $("demoWatch").textContent = d.watch; });
     box.append(b);
   });
@@ -75,14 +95,29 @@ $("probeBtn").addEventListener("click", async () => {
   } catch (e) { $("probeMsg").textContent = "검색 실패: " + e.message; }
 });
 
+// consent (public mode): asked once per browser tab
+function askConsent() {
+  try { if (sessionStorage.getItem("consent") === "1") return Promise.resolve(true); } catch (_) {}
+  return new Promise((resolve) => {
+    const box = $("consent"), ok = $("cOk"), agree = $("cAgree");
+    agree.checked = false; ok.disabled = true; box.hidden = false; agree.focus();
+    const done = (v) => { box.hidden = true; agree.onchange = ok.onclick = $("cCancel").onclick = null; if (v) { try { sessionStorage.setItem("consent", "1"); } catch (_) {} } resolve(v); };
+    agree.onchange = () => (ok.disabled = !agree.checked);
+    ok.onclick = () => done(true); $("cCancel").onclick = () => done(false);
+  });
+}
+$("privBtn").addEventListener("click", () => { try { sessionStorage.removeItem("consent"); } catch (_) {} askConsent(); });
+
 $("startBtn").addEventListener("click", async () => {
   msg("");
   try {
+    if (S.public && !(await askConsent())) return;
     await stopCamera();
     const precision = $("precision").value, loop = $("loop").checked;
     if (S.tab === "demo") {
       if (!S.demo) return msg("데모 시나리오를 선택하세요.", true);
       await api("/api/start", { kind: "demo", demo_id: S.demo, precision, loop });
+      S.done.add(S.demo); renderDemos();
     } else if (S.tab === "cctv") {
       const url = $("cctvUrl").value.trim();
       if (!url) return msg("카메라 주소를 입력하세요.", true);
@@ -104,7 +139,7 @@ async function startBrowserCam(precision) {
   } catch (e) { throw new Error("웹캠 권한이 거부되었거나 카메라를 찾을 수 없습니다 (" + e.name + ")"); }
   const v = document.createElement("video"); v.muted = true; v.playsInline = true; v.srcObject = S.camStream; await v.play();
   await api("/api/start", { kind: "browser", precision, loop: false });
-  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/ingest");
+  const ws = new WebSocket(wsUrl("/ws/ingest"));
   ws.binaryType = "arraybuffer"; S.ingest = ws;
   const off = document.createElement("canvas");
   ws.onopen = () => {
@@ -126,7 +161,7 @@ async function stopCamera() {
 // ------------------------------------------------------------------ websocket stream
 let ws, pingTimer;
 function connect() {
-  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/stream");
+  ws = new WebSocket(wsUrl("/ws/stream"));
   ws.binaryType = "arraybuffer";
   ws.onopen = () => { clearInterval(pingTimer); pingTimer = setInterval(() => ws.readyState === 1 && ws.send("ping"), 15000); };
   ws.onclose = () => { clearInterval(pingTimer); setTimeout(connect, 1500); };
@@ -238,7 +273,8 @@ function resetBoard() {
 }
 
 function applyEvent(e) {
-  if (e.kind === "decision") applyDecision(e);
+  if (e.kind === "notice") msg(e.text);
+  else if (e.kind === "decision") applyDecision(e);
   else if (e.kind === "action") addAction(e);
 }
 
@@ -301,10 +337,30 @@ function finishDrawing(commit) {
 function redraw() { if (S.meta && S.lastBitmap) drawFrame(S.lastBitmap, S.meta); }
 const pushZones = () => api("/api/zones", S.zones).catch((e) => msg("구역 저장 실패: " + e.message, true));
 
+// remaining demo time (public mode)
+setInterval(() => {
+  const dl = S.status && S.status.deadline, running = ["running", "starting", "connecting"].includes(S.status.state);
+  const pill = $("timerPill");
+  if (!dl || !running) { pill.hidden = true; return; }
+  const left = Math.max(0, Math.round(dl - Date.now() / 1000));
+  pill.hidden = false; $("timerVal").textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+  pill.classList.toggle("warn", left <= 30);
+}, 500);
+
 // ------------------------------------------------------------------ boot
 (async function boot() {
   try {
     const info = await api("/api/info");
+    S.public = !!info.public; S.done = new Set(info.demos_done || []);
+    if (S.public) {
+      $("demoQuota").hidden = false; // hosted demo: no CCTV URLs or server cameras; the visitor's own browser webcam, the demos, and the source link
+      $("tabCctv").hidden = true; $("serverOpt").hidden = true; $("serverCam").hidden = true;
+      $("pane-cam").querySelector("input[value=browser]").checked = true;
+      $("loop").parentElement.hidden = false;
+      $("foot").hidden = false; $("srcLink").href = info.source_url;
+      $("cMin").textContent = Math.round(info.limits.session_s / 60);
+      document.querySelectorAll(".tab").forEach((t) => (t.style.flex = "1"));
+    }
     S.demos = info.demos; S.demo = info.demos[0]?.id || null; renderDemos(); $("demoWatch").textContent = info.demos[0]?.watch || "";
     const p = $("jevPill");
     p.textContent = info.jev.live ? `Jev LIVE · ${info.jev.model}` : "Jev 오프라인 대체 응답기 (실제 모델 아님)";

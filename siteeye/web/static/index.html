@@ -11,6 +11,7 @@
   <div class="brand"><span class="logo" aria-hidden="true"></span><b>SiteEye</b><span class="sub">건설현장 근접사고 예측</span></div>
   <div class="pills">
     <span id="jevPill" class="pill">Jev 확인 중…</span>
+    <span id="timerPill" class="pill" hidden>남은 시간 <b id="timerVal">–</b></span>
     <span id="statePill" class="pill"><i class="dot"></i><span id="stateText">대기</span></span>
   </div>
 </header>
@@ -21,13 +22,14 @@
       <h2>영상 소스</h2>
       <div class="tabs" role="tablist">
         <button class="tab on" data-tab="demo" role="tab">데모</button>
-        <button class="tab" data-tab="cctv" role="tab">CCTV</button>
-        <button class="tab" data-tab="cam" role="tab">웹캠</button>
+        <button class="tab" id="tabCctv" data-tab="cctv" role="tab">CCTV</button>
+        <button class="tab" data-tab="cam" role="tab">내 웹캠</button>
       </div>
 
       <div class="pane on" id="pane-demo">
         <div id="demoList" class="demos"></div>
         <p id="demoWatch" class="hint"></p>
+        <p id="demoQuota" class="hint" hidden>각 데모는 처음 한 번은 사용량 제한과 관계없이 실행할 수 있습니다.</p>
       </div>
 
       <div class="pane" id="pane-cctv">
@@ -39,7 +41,7 @@
 
       <div class="pane" id="pane-cam">
         <label class="radio"><input type="radio" name="camKind" value="browser" checked> 이 브라우저의 웹캠 <em>권장</em></label>
-        <label class="radio"><input type="radio" name="camKind" value="server"> 서버에 연결된 카메라</label>
+        <label class="radio" id="serverOpt"><input type="radio" name="camKind" value="server"> 서버에 연결된 카메라</label>
         <div id="serverCam" class="sub-field" hidden>
           <div class="row">
             <select id="camIndex"><option value="0">카메라 0</option><option value="1">카메라 1</option><option value="2">카메라 2</option></select>
@@ -116,6 +118,32 @@
     </div>
   </section>
 </main>
+
+<footer id="foot" class="foot" hidden>
+  <span>영상은 서버에 저장되지 않으며 분석을 위해 일시적으로 처리됩니다.</span>
+  <span class="sp"></span>
+  <button id="privBtn" class="linklike" type="button">개인정보 안내</button>
+  <a id="srcLink" href="#" target="_blank" rel="noopener noreferrer">소스 코드 (AGPL-3.0)</a>
+</footer>
+
+<div id="consent" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="cTitle">
+  <div class="box">
+    <h2 id="cTitle">시작하기 전에 확인해 주세요</h2>
+    <ul>
+      <li><b>영상은 저장되지 않습니다.</b> 서버가 분석에만 일시적으로 처리하고, 세션이 끝나면 버립니다.</li>
+      <li>사고 전조 판단을 위해 <b>인식 결과(객체 수, 행동 요약)를 텍스트로</b> 외부 AI API(TypeSafe, 미국)에 보냅니다.</li>
+      <li>위험 정황에서 안전장구 인식이 불확실할 때에만 <b>작업자 주변을 잘라낸 이미지 1장</b>이 같은 API로 전송될 수 있습니다.</li>
+      <li>카메라에 <b>다른 사람의 얼굴이나 개인정보</b>가 보이지 않게 해 주세요. 타인이 촬영된 영상은 본인에게 책임이 있습니다.</li>
+      <li>데모는 한 번에 <b id="cMin">3</b>분까지이며, 동시 접속 수와 이용 횟수에 제한이 있습니다.</li>
+      <li>이 결과는 <b>연구·시연용 참고 정보</b>이며 실제 안전 판단을 대신하지 않습니다.</li>
+    </ul>
+    <label class="check"><input id="cAgree" type="checkbox"> 위 내용을 확인했고 동의합니다</label>
+    <div class="row end">
+      <button id="cCancel" class="ghost" type="button">취소</button>
+      <button id="cOk" class="primary" type="button" disabled>동의하고 시작</button>
+    </div>
+  </div>
+</div>
 <script src="/app.js"></script>
 </body>
 </html>

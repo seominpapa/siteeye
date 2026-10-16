@@ -32,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--mock", action="store_true", help="run the scripted scenarios")
     mode.add_argument("--source", help="video file, RTSP/HTTP URL or webcam index")
     mode.add_argument("--web", action="store_true", help="local web app (open http://127.0.0.1:8000)")
+    p.add_argument("--public", action="store_true", help="web: public demo mode for a Cloudflare Tunnel (limits, no CCTV URLs, no storage)")
     p.add_argument("--host", default="127.0.0.1", help="web: bind address (keep 127.0.0.1 unless you add authentication)")
     p.add_argument("--port", type=int, default=8000, help="web: port")
     p.add_argument("--scenario", default="all", help="mock scenario 1-4 or all")
@@ -132,9 +133,15 @@ def main() -> None:
 
         from siteeye.web.app import create_app
 
+        if a.public:
+            st.public = True
+            st.jev_urgent_min_gap_s = max(st.jev_urgent_min_gap_s, 1.0)  # keep API spend predictable
+            if a.host != "127.0.0.1":
+                print("WARNING: public mode should listen on 127.0.0.1 and be exposed only through the tunnel")
         live = bool(st.api_key) and not a.offline
-        print(f"siteeye web app: http://{a.host}:{a.port}   Jev: {'LIVE ' + st.model if live else 'offline stand-in (set TYPESAFE_API_KEY for the real model)'}")
-        uvicorn.run(create_app(st, a.offline), host=a.host, port=a.port, log_level="warning")
+        print(f"siteeye web app: http://{a.host}:{a.port}   Jev: {'LIVE ' + st.model if live else 'offline stand-in (set TYPESAFE_API_KEY for the real model)'}"
+              + (f"   PUBLIC mode: {st.max_sessions} concurrent x {st.session_max_s}s, {st.daily_jev_calls} Jev calls/day" if st.public else ""))
+        uvicorn.run(create_app(st, a.offline), host=a.host, port=a.port, log_level="warning", ws_max_size=1_000_000)
     elif a.mock:
         which = sorted(SCENARIOS) if a.scenario == "all" else [int(a.scenario)]
         asyncio.run(run_mock(st, which, a.offline, not a.quiet_payload))

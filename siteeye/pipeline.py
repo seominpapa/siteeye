@@ -42,6 +42,7 @@ class SafetyPipeline:
         self.last_assessment = RiskAssessment()
         # (decision, sequence, actions, assessment, roi) after every Jev call; the web UI hooks in here
         self.on_result: Callable[[JevDecision, SequencePayload, list[Action], RiskAssessment, RoiImage | None], None] | None = None
+        self.gate: Callable[[], bool] | None = None  # return False to skip a Jev call (budget exhausted)
         self._task: asyncio.Task | None = None
         self._last_call = -1e9
         self._log = open(log_path, "a", buffering=1) if log_path else None
@@ -63,6 +64,8 @@ class SafetyPipeline:
         gap = f.t - self._last_call
         due = gap >= self.st.jev_interval_s or (a.urgent and gap >= self.st.jev_urgent_min_gap_s)
         if not due or not f.workers or (self._task and not self._task.done()):
+            return
+        if self.gate and not self.gate():
             return
         self._last_call = f.t
         roi = self._roi(f, frame, a)  # crop now: the frame buffer is reused by the capture thread

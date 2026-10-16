@@ -1,20 +1,22 @@
-"""AnalysisRunner: one video source -> vision -> SafetyPipeline -> every connected browser.
+"""AnalysisRunner = one visitor's analysis session: one source -> vision -> SafetyPipeline -> that visitor's browser.
 
 Wire format on /ws/stream
   binary  = uint32(meta_len) | meta JSON | JPEG      (latest frame only; slow browsers skip frames)
   text    = {"type": "status" | "event" | "history", ...}   (reliable: decisions and actions are never dropped)
+
+Public mode never writes frames to disk: snapshots travel to the browser as data URLs and live only in its memory.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import struct
 import time
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import cv2
 import httpx
@@ -22,7 +24,6 @@ import numpy as np
 from fastapi import WebSocket
 from pydantic import BaseModel
 
-from ..config import Settings
 from ..jev_client import JevSafetyPredictor, RoiImage
 from ..mock import simulated_transport
 from ..pipeline import SafetyPipeline
@@ -30,11 +31,14 @@ from ..router import Action, SafetyActionRouter
 from ..schemas import BBox, FrameFeatures, JevDecision, RiskAssessment, SequencePayload
 from ..source import FrameSource
 from ..spatial import SpatialFeatureProcessor
-from ..vision import HybridVisionExtractor, VisionModelRegistry
 from .demo import DEMOS, ScriptedDemo
+from .sessions import Busy
+
+if TYPE_CHECKING:
+    from .sessions import SessionManager
 
 log = logging.getLogger("siteeye.web")
-SEND_FPS, SEND_MAX_W = 15, 960
+SEND_FPS, SEND_MAX_W, MAX_INGEST_BYTES = 15, 960, 400_000
 ACTION_KO = {
     "equipment_estop": "장비 비상정지 인터록 발동",
     "speaker_alert": "현장 스피커 경고방송",
@@ -95,20 +99,26 @@ def _norm(b: BBox, w: int, h: int) -> list[float]:
 
 
 class AnalysisRunner:
-    def __init__(self, st: Settings, offline: bool, out_dir: Path):
-        self.st, self.offline = st, offline
-        self.live = bool(st.api_key) and not offline
-        self.snap_dir = out_dir / "snapshots"
-        self.snap_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, mgr: SessionManager, sid: str):
+        self.mgr, self.sid, self.public = mgr, sid, mgr.public
+        self.st = mgr.st.model_copy(deep=True)  # private copy: zones and limits are per visitor
+        self.live, self.uses_slot = False, False
+        self.ip, self.last_seen = "", time.monotonic()
+        self.calls, self.deadline, self._limit_notice = 0, 0.0, False
+        self.snap_dir = mgr.st.out_dir / "snapshots"
+        if not self.public:
+            self.snap_dir.mkdir(parents=True, exist_ok=True)
         self.clients: set[_Client] = set()
         self.history: deque[dict] = deque(maxlen=150)
         self.status: dict = {"state": "idle", "message": "분석을 시작하세요"}
         self._task: asyncio.Task | None = None
-        self._pipe: SafetyPipeline | None = None
-        self._pool = ThreadPoolExecutor(max_workers=1)  # single inference thread
-        self._extractors: dict[str, HybridVisionExtractor] = {}
         self._ingest: asyncio.Queue | None = None
+        self._ex = None
         self._wh, self._last_jpeg, self._demo_zones = (1, 1), b"", {}
+
+    @property
+    def running(self) -> bool:
+        return self._task is not None and not self._task.done()
 
     # ------------------------------------------------------------------ clients and messages
 
@@ -122,9 +132,16 @@ class AnalysisRunner:
     def remove_client(self, c: _Client) -> None:
         self.clients.discard(c)
         c.close()
+        if self.public and not self.clients and self.running:
+            asyncio.create_task(self._stop_if_abandoned())
+
+    async def _stop_if_abandoned(self) -> None:
+        await asyncio.sleep(10)  # allow a page reload; otherwise free the slot for someone else
+        if not self.clients and self.running:
+            await self.stop()
 
     def _set_status(self, state: str, message: str = "", **extra) -> None:
-        self.status = {"state": state, "message": message, **extra}
+        self.status = {"state": state, "message": message, "deadline": self.deadline or None, **extra}
         for c in self.clients:
             c.send_ctrl({"type": "status", **self.status})
 
@@ -135,12 +152,25 @@ class AnalysisRunner:
 
     # ------------------------------------------------------------------ lifecycle
 
-    async def start(self, req: StartRequest) -> None:
-        await self.stop()
+    async def start(self, req: StartRequest, ip: str, vid: str) -> None:
+        if self.public and req.kind in ("url", "webcam"):
+            raise ValueError("공개 데모에서는 데모 영상과 브라우저 웹캠만 사용할 수 있습니다. CCTV는 소스 코드를 받아 직접 실행하세요.")
         if req.kind == "demo" and req.demo_id not in DEMOS:
             raise ValueError("unknown demo")
         if req.kind == "url" and not (req.url or "").lower().startswith(("rtsp://", "rtsps://", "http://", "https://")):
             raise ValueError("URL must start with rtsp://, rtsps://, http:// or https://")
+        if self.public:
+            req = req.model_copy(update={"precision": "fast"})
+        await self.stop()
+        scripted = req.kind == "demo" and DEMOS[req.demo_id or ""].kind == "scripted"
+        first_demo = req.kind == "demo" and req.demo_id not in self.mgr.demos_done(vid)
+        self.mgr.admit(self, ip, uses_slot=not scripted, first_demo=first_demo)  # raises Busy
+        self.uses_slot = not scripted
+        if req.kind == "demo":
+            self.mgr.mark_demo(vid, req.demo_id or "")
+        self.live = self.mgr.live_for_new_session()
+        self.calls, self._limit_notice = 0, False
+        self.deadline = time.time() + self.st.session_max_s if self.public else 0.0
         self.history.clear()
         self._set_status("starting", "시작하는 중…")
         self._task = asyncio.create_task(self._run(req))
@@ -153,11 +183,15 @@ class AnalysisRunner:
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
         self._task = None
+        self.deadline = 0.0
         self._set_status("idle", "중지됨")
+
+    def set_zones(self, danger: list, rest: list) -> None:
+        self.st.danger_zones, self.st.rest_zones = danger, rest  # read live by this session's spatial processor
 
     def push_ingest(self, data: bytes) -> None:
         q = self._ingest
-        if q is None:
+        if q is None or len(data) > MAX_INGEST_BYTES:
             return
         if q.full():
             q.get_nowait()  # drop the oldest frame, keep latency low
@@ -181,7 +215,7 @@ class AnalysisRunner:
                     continue
                 if waiting:
                     waiting = False
-                    self._set_status("running", "분석 중")
+                    self._set_status("running", "분석 중", live=self.live)
                 seq, ts, frame = got
                 yield ts, frame, None, False
         finally:
@@ -203,32 +237,37 @@ class AnalysisRunner:
                 continue
             if not got_first:
                 got_first = True
-                self._set_status("running", "분석 중")
+                self._set_status("running", "분석 중", live=self.live)
             yield time.time(), img, None, False
-
-    def _extractor(self, precision: str) -> HybridVisionExtractor:
-        tracks = "A" if precision == "fast" else "A,B"
-        if tracks not in self._extractors:
-            self._extractors[tracks] = VisionModelRegistry.build(self.st.model_copy(update={"tracks": tracks}))
-        ex = self._extractors[tracks]
-        ex.reset()
-        return ex
 
     # ------------------------------------------------------------------ main loop
 
+    def _gate(self) -> bool:
+        """May the pipeline start another Jev call? Public sessions have a per-session and a daily budget."""
+        if not self.live or not self.public:
+            return True
+        ok = self.calls < self.st.max_jev_calls_per_session and self.mgr.budget_ok()
+        if not ok and not self._limit_notice:
+            self._limit_notice = True
+            self._emit({"kind": "notice", "ts": time.time(), "text": "이 세션의 Jev 호출 한도에 도달했습니다. 영상 분석은 계속되지만 판단은 갱신되지 않습니다."})
+        return ok
+
     async def _run(self, req: StartRequest) -> None:
         loop = asyncio.get_running_loop()
-        client = None if self.live else httpx.AsyncClient(transport=simulated_transport())
+        client = httpx.AsyncClient(transport=simulated_transport()) if not self.live else None
         predictor = JevSafetyPredictor(self.st, client)
-        pipe = self._pipe = SafetyPipeline(self.st, predictor, SafetyActionRouter(self.st, sinks=[]), verbose=False)
-        pipe.on_result = self._on_result
-        source, gen, extractor, proc = None, None, None, None
+        router = SafetyActionRouter(self.st, sinks=[], save_snapshots=not self.public)
+        pipe = SafetyPipeline(self.st, predictor, router, verbose=False)
+        pipe.on_result, pipe.gate = self._on_result, self._gate
+        source, gen, proc = None, None, None
         self._demo_zones = {}
         try:
+            scripted = False
             if req.kind == "demo":
                 info = DEMOS[req.demo_id or ""]
                 self._demo_zones = {k: [v] for k, v in info.zones.items()}  # one polygon each -> list of polygons
-                if info.kind == "scripted":
+                scripted = info.kind == "scripted"
+                if scripted:
                     gen = ScriptedDemo(info.id).frames_stream(req.loop)
                 else:
                     source = FrameSource(info.path, pace_files=True, loop=req.loop)
@@ -240,37 +279,22 @@ class AnalysisRunner:
                 gen = self._browser_frames()
             if gen is None:
                 gen = self._capture(source)
-            if not (req.kind == "demo" and DEMOS[req.demo_id or ""].kind == "scripted"):
+            if not scripted:
                 self._set_status("starting", "비전 모델을 불러오는 중… (처음에는 수십 초 걸릴 수 있습니다)")
-                extractor = await loop.run_in_executor(self._pool, self._extractor, req.precision)
+                self._ex = await loop.run_in_executor(self.mgr.pool, self.mgr.acquire_extractor, req.precision)
                 proc = SpatialFeatureProcessor(self.st)
-            self._set_status("running", "분석 중", source=req.kind, demo=req.demo_id, live=self.live,
-                             zones_hint=self._demo_zones)
-            idx, stamps, last_send, vision_ms = 0, deque(maxlen=30), 0.0, 0.0
-
-            def process(frame: np.ndarray, ts: float, i: int) -> FrameFeatures:
-                h, w = frame.shape[:2]
-                return proc.process(extractor.infer(frame, i), (w, h), ts, i)  # type: ignore[union-attr]
-
-            async for ts, img, feats, restarted in gen:
-                if restarted:
-                    pipe.reset()
-                if feats is None:
-                    t0 = time.perf_counter()
-                    feats = await loop.run_in_executor(self._pool, process, img, ts, idx)
-                    vision_ms = (time.perf_counter() - t0) * 1000
-                self._wh = (img.shape[1], img.shape[0])
-                await pipe.on_frame(feats, img)
-                idx += 1
-                stamps.append(time.monotonic())
-                now = time.monotonic()
-                if now - last_send >= 1 / SEND_FPS:
-                    last_send = now
-                    fps = (len(stamps) - 1) / (stamps[-1] - stamps[0]) if len(stamps) > 1 else 0.0
-                    self._broadcast_frame(img, feats, pipe, fps, vision_ms)
-            self._set_status("idle", "영상이 끝났습니다")
+            self._set_status("running", "분석 중", source=req.kind, demo=req.demo_id, live=self.live)
+            timeout = self.st.session_max_s if self.public else None
+            try:
+                await asyncio.wait_for(self._loop(gen, pipe, proc, loop), timeout)
+                self._set_status("idle", "영상이 끝났습니다")
+            except asyncio.TimeoutError:
+                m, s = divmod(self.st.session_max_s, 60)
+                self._set_status("idle", f"데모 시간({f'{m}분' if not s else f'{self.st.session_max_s}초'})이 끝났습니다. 다시 시작할 수 있습니다.", ended="limit")
         except asyncio.CancelledError:
             raise
+        except Busy as exc:
+            self._set_status("error", str(exc))
         except Exception as exc:  # noqa: BLE001
             log.exception("analysis failed")
             self._set_status("error", f"오류: {exc}")
@@ -282,7 +306,33 @@ class AnalysisRunner:
             except Exception:  # noqa: BLE001
                 pass
             await predictor.aclose()
-            self._ingest = None
+            self.mgr.release_extractor(self._ex)
+            self._ex, self._ingest = None, None
+
+    async def _loop(self, gen, pipe: SafetyPipeline, proc, loop) -> None:
+        idx, stamps, last_send, vision_ms = 0, deque(maxlen=30), 0.0, 0.0
+        ex = self._ex
+
+        def process(frame: np.ndarray, ts: float, i: int) -> FrameFeatures:
+            h, w = frame.shape[:2]
+            return proc.process(ex.infer(frame, i), (w, h), ts, i)
+
+        async for ts, img, feats, restarted in gen:
+            if restarted:
+                pipe.reset()
+            if feats is None:
+                t0 = time.perf_counter()
+                feats = await loop.run_in_executor(self.mgr.pool, process, img, ts, idx)
+                vision_ms = (time.perf_counter() - t0) * 1000
+            self._wh = (img.shape[1], img.shape[0])
+            await pipe.on_frame(feats, img)
+            idx += 1
+            stamps.append(time.monotonic())
+            now = time.monotonic()
+            if now - last_send >= 1 / SEND_FPS:
+                last_send = now
+                fps = (len(stamps) - 1) / (stamps[-1] - stamps[0]) if len(stamps) > 1 else 0.0
+                self._broadcast_frame(img, feats, pipe, fps, vision_ms)
 
     # ------------------------------------------------------------------ outputs
 
@@ -321,14 +371,22 @@ class AnalysisRunner:
         for c in self.clients:
             c.send_frame(payload)
 
+    def _snapshot(self, data: bytes, prefix: str, ts: float) -> str:
+        if self.public:  # memory only: the image reaches the visitor inside the event, nothing is written to disk
+            return "data:image/jpeg;base64," + base64.b64encode(data).decode()
+        name = f"{prefix}_{int(ts * 1000)}.jpg"
+        Path(self.snap_dir / name).write_bytes(data)
+        return f"/snapshots/{name}"
+
     def _on_result(self, d: JevDecision, seq: SequencePayload, acts: list[Action], a: RiskAssessment, roi: RoiImage | None) -> None:
         ts, (w, h) = time.time(), self._wh
+        if self.live:
+            self.calls += 1
+            self.mgr.count_call()
         snap = None
         data = roi.jpeg if roi else (self._last_jpeg or None)
         if data and (roi or any(x.kind == "dashboard_review" for x in acts)):
-            name = f"{'roi' if roi else 'frame'}_{int(ts * 1000)}.jpg"
-            (self.snap_dir / name).write_bytes(data)
-            snap = f"/snapshots/{name}"
+            snap = self._snapshot(data, "roi" if roi else "frame", ts)
         self._emit({
             "kind": "decision", "ts": ts, "mode": d.mode, "p": round(d.p_hazard, 3), "risk": round(d.risk_score, 2),
             "plan": d.action_plan, "plan_ko": PLAN_KO.get(d.action_plan, d.action_plan), "latency_ms": round(d.latency_ms),
