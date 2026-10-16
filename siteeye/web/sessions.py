@@ -152,7 +152,7 @@ class SessionManager:
             with self._lock:
                 self._built -= 1
             raise
-        ex = HybridVisionExtractor(tracks, self.st.aux_every)
+        ex = HybridVisionExtractor(tracks, self.st.aux_every, self.st.label_min_conf)
         ex.reset()  # fresh ByteTrack state for the new visitor
         log.info("extractor ready: tracks %s (requested %s)", ex.active, precision)
         return ex

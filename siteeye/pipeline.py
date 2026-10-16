@@ -43,6 +43,7 @@ class SafetyPipeline:
         # (decision, sequence, actions, assessment, roi) after every Jev call; the web UI hooks in here
         self.on_result: Callable[[JevDecision, SequencePayload, list[Action], RiskAssessment, RoiImage | None], None] | None = None
         self.gate: Callable[[], bool] | None = None  # return False to skip a Jev call (budget exhausted)
+        self.on_error: Callable[[Exception], None] | None = None  # a Jev call failed (bad key, network, rate limit)
         self._task: asyncio.Task | None = None
         self._last_call = -1e9
         self._log = open(log_path, "a", buffering=1) if log_path else None
@@ -80,6 +81,8 @@ class SafetyPipeline:
             await self.decide(seq, roi, a)
         except Exception as exc:  # noqa: BLE001 - network/API trouble must not stop detection
             log.error("Jev call failed: %s", exc)
+            if self.on_error:
+                self.on_error(exc)
 
     # ------------------------------------------------------------------ one decision (also used by --mock)
 

@@ -6,6 +6,12 @@
 """
 from __future__ import annotations
 
+import sys
+
+if sys.version_info < (3, 10):  # checked before the package imports: they use 3.10 syntax
+    sys.exit(f"Python 3.10 or newer is required (this is {sys.version.split()[0]}). "
+             "Create the virtualenv with a newer interpreter, e.g. python3.12 -m venv .venv")
+
 import argparse
 import asyncio
 import logging

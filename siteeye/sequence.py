@@ -19,6 +19,7 @@ _NOT_WORN = (PPEState.ABSENT, PPEState.HELD, PPEState.UNCERTAIN)
 @dataclass
 class _Snap:
     t: float
+    bucket: int = 0  # absolute 1-second slot; labels come from slot differences, not rounded timestamps
     workers: dict[int, WorkerFeatures] = field(default_factory=dict)
     # worst case within the second, so a brief spike is not lost by keeping only the last frame
     min_ttc: dict[int, float] = field(default_factory=dict)
@@ -42,7 +43,7 @@ class SequenceBuffer:
             self._snaps.append(self._cur)
             self._cur = None
         if self._cur is None:
-            self._cur = _Snap(t=f.t)
+            self._cur = _Snap(t=f.t, bucket=bucket)
         self._bucket, c = bucket, self._cur
         c.t, c.equipment = f.t, f.equipment
         for w in f.workers:
@@ -58,8 +59,7 @@ class SequenceBuffer:
     def build(self) -> SequencePayload:
         snaps = list(self._snaps) + ([self._cur] if self._cur else [])
         snaps = snaps[-self.st.window_s:]
-        t_now = snaps[-1].t
-        labels = [f"T-{round((t_now - s.t) / self.st.snapshot_interval_s)}s" for s in snaps]
+        labels = [f"T-{snaps[-1].bucket - s.bucket}s" for s in snaps]  # a live stream's last frame per slot is not exactly 1 s apart
         ids = sorted({i for s in snaps for i in s.workers})
         timelines = [self._timeline(i, snaps, labels) for i in ids if i in snaps[-1].workers]
         eq = [EquipmentSummary(eq_id=e.eq_id, label=e.label, motion=e.motion, speed_mps=e.speed_mps)
@@ -108,7 +108,8 @@ class SequenceBuffer:
             if prev is None or not prev.on_ladder:
                 ev.append(f"사다리 {w.climb_height_m or 0:.1f}m 등반")
             if w.harness.state is not PPEState.HOOKED and (prev is None or prev.harness.state is not w.harness.state):
-                ev.append(f"안전고리 미결속 상태 ({w.harness.status})")
+                ev.append({PPEState.UNHOOKED: "안전고리 미결속 상태", PPEState.NOT_DETECTED: "안전고리 확인 안 됨"}
+                          .get(w.harness.state, f"안전고리 {w.harness.status}"))
         if w.torso_tilt_deg is not None and w.torso_tilt_deg >= 15:
             ev.append(f"상체 기울기 {w.torso_tilt_deg:.0f}도" + (" (사다리 외곽 이탈)" if w.torso_outside_ladder else ""))
         if rel is not None and rel.distance_m <= 8.0:

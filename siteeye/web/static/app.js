@@ -106,7 +106,8 @@ function updateBadge(st) {
   const b = $("simBadge");
   if (st.state !== "running" || st.source !== "demo" || st.sim == null) { b.hidden = true; return; }
   b.hidden = false; b.className = "simbadge " + (st.sim ? "sim" : "real");
-  b.textContent = st.sim ? "시뮬레이션 영상 · 박스와 수치는 시나리오로 정한 값" : "영상 실처리 · YOLO가 실제로 탐지한 결과";
+  b.textContent = st.sim ? "시뮬레이션 영상 · 박스와 수치는 시나리오로 정한 값"
+    : (st.demo === "street" ? "샘플 영상 · YOLO가 실제로 탐지한 결과" : "AI 생성 영상 · YOLO가 실제로 탐지한 결과");
 }
 
 $("probeBtn").addEventListener("click", async () => {
@@ -308,7 +309,10 @@ function resetBoard() {
 }
 
 function applyEvent(e) {
-  if (e.kind === "notice") msg(e.text);
+  if (e.kind === "notice") { // visible on the video as well: a missing Jev answer must not look like "all clear"
+    msg(e.text, true);
+    if (Date.now() - e.ts * 1000 < 8000) { const bar = $("alertBar"); bar.hidden = false; bar.className = "alertbar warn"; bar.textContent = e.text; S.alertUntil = Date.now() + 9000; }
+  }
   else if (e.kind === "decision") applyDecision(e);
   else if (e.kind === "action") addAction(e);
 }

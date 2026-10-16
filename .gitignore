@@ -14,3 +14,7 @@ models/
 *.pt
 .DS_Store
 weights/
+
+# original AI clips (with audio) and raw uploads stay local; demo/s*.mp4 are the trimmed copies
+demo/source/
+docs/*.mp4

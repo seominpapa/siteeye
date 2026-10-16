@@ -6,9 +6,13 @@ from pydantic import BaseModel, Field
 
 Polygon = list[tuple[float, float]]  # normalized (0-1) image coordinates
 
+# The first ten are the target vocabulary. The last two are descriptive variants: on the demo footage YOLO-World v2
+# scored "excavator" ~0.1 but "heavy construction vehicle" 0.4-0.7, and "yellow hard hat" 0.5-0.7 vs "hard hat" ~0.1.
+# vision.canonical_label maps them back to the shared labels.
 DEFAULT_WORLD_PROMPTS = [
     "person", "hard hat", "safety vest", "safety harness lanyard", "excavator",
     "forklift", "crane hook", "ladder", "scaffolding", "open manhole",
+    "yellow hard hat", "heavy construction vehicle",
 ]
 
 DEFAULT_SITE_NOTES = [
@@ -43,6 +47,8 @@ class Settings(BaseModel):
     conf_floor: float = 0.25  # below this a detection is dropped
     conf_confident: float = 0.55  # [floor, confident) is tagged "uncertain"
     fallback_conf: float = 0.45  # risky context + a PPE/object conf below this triggers the image fallback
+    # descriptive prompts ("heavy construction vehicle") fire on buses and trucks at 0.25-0.44, so machinery needs more
+    label_min_conf: dict[str, float] = Field(default_factory=lambda: {"heavy machinery": 0.45})
 
     # --- geometry ---
     person_height_m: float = 1.7

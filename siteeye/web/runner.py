@@ -106,6 +106,7 @@ class AnalysisRunner:
         self.live, self.uses_slot = False, False
         self.ip, self.last_seen = "", time.monotonic()
         self.calls, self.deadline, self._limit_notice = 0, 0.0, False
+        self._jev_disabled, self._notices = False, set()
         self.snap_dir = mgr.st.out_dir / "snapshots"
         if not self.public:
             self.snap_dir.mkdir(parents=True, exist_ok=True)
@@ -171,6 +172,7 @@ class AnalysisRunner:
             self.mgr.mark_demo(vid, req.demo_id or "")
         self.live = self.mgr.live_for_new_session()
         self.calls, self._limit_notice = 0, False
+        self._jev_disabled, self._notices = False, set()
         self.deadline = time.time() + self.st.session_max_s if self.public else 0.0
         self.history.clear()
         self._set_status("starting", "시작하는 중…")
@@ -243,8 +245,26 @@ class AnalysisRunner:
 
     # ------------------------------------------------------------------ main loop
 
+    def _on_error(self, exc: Exception) -> None:
+        """Tell the visitor why there are no Jev judgements (a failing call would otherwise be invisible in the UI)."""
+        text = str(exc)
+        if "HTTP 401" in text or "HTTP 403" in text:
+            msg, fatal = "Jev API 키가 거부되었습니다(401/403). .env 의 TYPESAFE_API_KEY 를 확인하세요. 영상 분석은 계속되지만 판단은 갱신되지 않습니다.", True
+        elif "HTTP 429" in text:
+            msg, fatal = "Jev 요청 한도(429)에 걸렸습니다. 잠시 후 다시 시도됩니다.", False
+        elif "connection failed" in text:
+            msg, fatal = "Jev 서버에 연결하지 못했습니다. 네트워크를 확인하세요.", False
+        else:
+            msg, fatal = f"Jev 호출 오류: {text[:140]}", False
+        self._jev_disabled = self._jev_disabled or fatal  # a rejected key will not start working by retrying
+        if msg not in self._notices:
+            self._notices.add(msg)
+            self._emit({"kind": "notice", "ts": time.time(), "text": msg})
+
     def _gate(self) -> bool:
         """May the pipeline start another Jev call? Public sessions have a per-session and a daily budget."""
+        if self._jev_disabled:
+            return False
         if not self.live or not self.public:
             return True
         ok = self.calls < self.st.max_jev_calls_per_session and self.mgr.budget_ok()
@@ -259,7 +279,7 @@ class AnalysisRunner:
         predictor = JevSafetyPredictor(self.st, client)
         router = SafetyActionRouter(self.st, sinks=[], save_snapshots=not self.public)
         pipe = SafetyPipeline(self.st, predictor, router, verbose=False)
-        pipe.on_result, pipe.gate = self._on_result, self._gate
+        pipe.on_result, pipe.gate, pipe.on_error = self._on_result, self._gate, self._on_error
         source, gen, proc = None, None, None
         self._demo_zones = {}
         try:

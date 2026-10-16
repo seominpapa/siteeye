@@ -28,6 +28,8 @@ _ALIASES = {
     "safety harness lanyard": "harness lanyard", "harness lanyard": "harness lanyard", "lanyard": "harness lanyard",
     # class names used by common construction-safety datasets (Roboflow / Hugging Face PPE models)
     "machinery": "heavy machinery", "heavy machinery": "heavy machinery", "heavy equipment": "heavy machinery",
+    "heavy construction vehicle": "heavy machinery", "construction machine": "heavy machinery",
+    "yellow hard hat": "hard hat",
     "safety helmet": "hard hat", "no safety helmet": "no hard hat", "no vest": "no safety vest",
 }
 
@@ -139,8 +141,9 @@ class PPETrackC:
 class HybridVisionExtractor:
     """Runs track A every frame and the heavier aux tracks (B, C) every Nth frame, reusing their last output."""
 
-    def __init__(self, tracks: dict[str, VisionTrack], aux_every: int):
+    def __init__(self, tracks: dict[str, VisionTrack], aux_every: int, label_min_conf: dict[str, float] | None = None):
         self.tracks, self.aux_every = tracks, max(1, aux_every)
+        self.label_min_conf = label_min_conf or {}
         self._aux_last: list[Detection] = []
         self.slot = tracks.get("A")  # the per-session pose model, so a pool can take it back after the session
 
@@ -165,7 +168,7 @@ class HybridVisionExtractor:
             for k in ("B", "C"):
                 if k in self.tracks:
                     aux += self._safe(k, frame)
-            self._aux_last = aux
+            self._aux_last = [d for d in aux if d.conf >= self.label_min_conf.get(d.label, 0.0)]
         # with track A active, persons come from A only (ids + keypoints); B/C persons would duplicate them
         keep_person = "A" not in self.tracks
         dets += [d for d in self._aux_last if keep_person or d.label != "person"]
@@ -226,4 +229,4 @@ class VisionModelRegistry:
         if not tracks:
             raise RuntimeError("no vision track could be loaded; check weights and SITEEYE_TRACKS")
         log.info("vision tracks active: %s on %s", ",".join(tracks), device)
-        return HybridVisionExtractor(tracks, st.aux_every)
+        return HybridVisionExtractor(tracks, st.aux_every, st.label_min_conf)
