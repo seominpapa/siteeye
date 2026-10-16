@@ -57,7 +57,8 @@ class StartRequest(BaseModel):
     demo_id: str | None = None
     url: str | None = None
     index: int = 0
-    precision: Literal["fast", "accurate"] = "fast"
+    precision: Literal["fast", "accurate", "full"] = "fast"  # tracks A / A+B / A+B+C
+    demo_mode: Literal["sim", "video"] = "sim"  # scripted simulation, or the demo's real video through the vision models
     loop: bool = True
 
 
@@ -157,12 +158,12 @@ class AnalysisRunner:
             raise ValueError("공개 데모에서는 데모 영상과 브라우저 웹캠만 사용할 수 있습니다. CCTV는 소스 코드를 받아 직접 실행하세요.")
         if req.kind == "demo" and req.demo_id not in DEMOS:
             raise ValueError("unknown demo")
+        if req.kind == "demo" and req.demo_mode == "video" and DEMOS[req.demo_id or ""].video_file() is None:
+            raise ValueError("이 데모에는 영상 파일이 없습니다. 시뮬레이션으로 실행해 주세요.")
         if req.kind == "url" and not (req.url or "").lower().startswith(("rtsp://", "rtsps://", "http://", "https://")):
             raise ValueError("URL must start with rtsp://, rtsps://, http:// or https://")
-        if self.public:
-            req = req.model_copy(update={"precision": "fast"})
         await self.stop()
-        scripted = req.kind == "demo" and DEMOS[req.demo_id or ""].kind == "scripted"
+        scripted = req.kind == "demo" and DEMOS[req.demo_id or ""].is_scripted(req.demo_mode)
         first_demo = req.kind == "demo" and req.demo_id not in self.mgr.demos_done(vid)
         self.mgr.admit(self, ip, uses_slot=not scripted, first_demo=first_demo)  # raises Busy
         self.uses_slot = not scripted
@@ -265,12 +266,14 @@ class AnalysisRunner:
             scripted = False
             if req.kind == "demo":
                 info = DEMOS[req.demo_id or ""]
-                self._demo_zones = {k: [v] for k, v in info.zones.items()}  # one polygon each -> list of polygons
-                scripted = info.kind == "scripted"
+                scripted = info.is_scripted(req.demo_mode)
                 if scripted:
+                    self._demo_zones = {k: [v] for k, v in info.zones.items()}  # one polygon each -> list of polygons
                     gen = ScriptedDemo(info.id).frames_stream(req.loop)
-                else:
-                    source = FrameSource(info.path, pace_files=True, loop=req.loop)
+                else:  # a real clip: analysed by the vision models, with the demo's zones applied for real
+                    self._demo_zones = info.video_zones()
+                    self.st.danger_zones, self.st.rest_zones = self._demo_zones.get("danger", []), self._demo_zones.get("rest", [])
+                    source = FrameSource(str(info.video_file()), pace_files=True, loop=req.loop)
             elif req.kind == "url":
                 source = FrameSource(req.url, loop=False)
             elif req.kind == "webcam":
@@ -283,7 +286,8 @@ class AnalysisRunner:
                 self._set_status("starting", "비전 모델을 불러오는 중… (처음에는 수십 초 걸릴 수 있습니다)")
                 self._ex = await loop.run_in_executor(self.mgr.pool, self.mgr.acquire_extractor, req.precision)
                 proc = SpatialFeatureProcessor(self.st)
-            self._set_status("running", "분석 중", source=req.kind, demo=req.demo_id, live=self.live)
+            self._set_status("running", "분석 중", source=req.kind, demo=req.demo_id, live=self.live,
+                             sim=True if scripted else (False if req.kind == "demo" else None))
             timeout = self.st.session_max_s if self.public else None
             try:
                 await asyncio.wait_for(self._loop(gen, pipe, proc, loop), timeout)

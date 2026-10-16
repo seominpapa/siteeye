@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ..config import Polygon, Settings
+from ..vision import weights_available
 from .demo import DEMO_DIR, DEMOS
 from .runner import AnalysisRunner, StartRequest, probe_cameras
 from .sessions import Busy, SessionManager
@@ -46,8 +47,8 @@ def create_app(st: Settings, offline: bool = False) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         loop = asyncio.get_running_loop()
-        if st.public:  # warm one inference slot so the first visitor does not wait for model loading
-            ex = await loop.run_in_executor(mgr.pool, mgr.acquire_extractor, "fast")
+        if st.public:  # warm one slot plus the shared B/C tracks so the first visitor does not wait for model loading
+            ex = await loop.run_in_executor(mgr.pool, mgr.acquire_extractor, "full")
             mgr.release_extractor(ex)
         janitor = asyncio.create_task(mgr.janitor())
         yield
@@ -100,7 +101,10 @@ def create_app(st: Settings, offline: bool = False) -> FastAPI:
             "public": st.public, "source_url": st.source_url,
             "limits": {"session_s": st.session_max_s, "max_sessions": st.max_sessions} if st.public else None,
             "jev": {"live": mgr.live_for_new_session(), "model": st.model, "endpoint": st.api_url if mgr.live_for_new_session() and not st.public else None},
-            "demos": [{"id": d.id, "title": d.title, "expect": d.expect, "watch": d.watch, "kind": d.kind} for d in DEMOS.values()],
+            "demos": [{"id": d.id, "title": d.title, "expect": d.expect, "watch": d.watch, "kind": d.kind,
+                       "has_video": d.video_file() is not None} for d in DEMOS.values()],
+            "precisions": {"fast": True, "accurate": True, "full": weights_available(st.ppe_weights, st.models_dir)},
+            "default_precision": "accurate" if st.public else "fast",
             "status": s.status, "demos_done": mgr.demos_done(vid_of(request)),
         }
 

@@ -29,7 +29,12 @@
       <div class="pane on" id="pane-demo">
         <div id="demoList" class="demos"></div>
         <p id="demoWatch" class="hint"></p>
-        <p id="demoQuota" class="hint" hidden>각 데모는 처음 한 번은 사용량 제한과 관계없이 실행할 수 있습니다.</p>
+        <fieldset id="demoMode" class="modes">
+          <legend>처리 방식</legend>
+          <label class="radio"><input type="radio" name="demoMode" value="sim" checked> 시뮬레이션 <small>탐지값을 시나리오로 정함</small></label>
+          <label class="radio"><input type="radio" name="demoMode" value="video"> 영상 실처리 <small>YOLO가 실제로 탐지</small></label>
+        </fieldset>
+        <p id="demoQuota" class="hint" hidden>각 데모는 처음 한 번은 사용량 제한과 관계없이 실행할 수 있습니다. 시뮬레이션은 분석 슬롯을 쓰지 않아 언제든 실행됩니다.</p>
       </div>
 
       <div class="pane" id="pane-cctv">
@@ -57,6 +62,7 @@
           <select id="precision">
             <option value="fast">빠름 (포즈 추적)</option>
             <option value="accurate">정밀 (포즈 + 제로샷 안전장구)</option>
+            <option value="full">최대 (정밀 + 현장 PPE 모델)</option>
           </select>
         </label>
         <label class="check"><input id="loop" type="checkbox" checked> 영상 반복 재생</label>
@@ -74,6 +80,7 @@
         <button class="zbtn danger" data-zone="danger" type="button">위험구역</button>
         <button class="zbtn rest" data-zone="rest" type="button">휴게구역</button>
         <button id="zoneClear" class="ghost" type="button">초기화</button>
+        <button id="zoneCopy" class="ghost" type="button" title="그린 구역을 demo/&lt;id&gt;.json 형식으로 복사">JSON 복사</button>
       </div>
       <p class="hint" id="zoneHint">버튼을 누르고 영상에서 꼭짓점을 클릭하세요. 더블클릭 또는 Enter로 완료, Esc로 취소.</p>
     </section>
@@ -84,6 +91,7 @@
       <canvas id="cv" width="1280" height="720"></canvas>
       <div id="empty" class="empty"><b>영상 소스를 선택하고 <em>분석 시작</em>을 누르세요</b><span>데모 시나리오로 먼저 동작을 확인할 수 있습니다</span></div>
       <div id="chip" class="chip" hidden></div>
+      <div id="simBadge" class="simbadge" hidden></div>
       <div id="alertBar" class="alertbar" hidden></div>
     </div>
   </section>

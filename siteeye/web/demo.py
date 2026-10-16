@@ -8,6 +8,7 @@ The street demo is a real video file that goes through the real YOLO tracks.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,8 +31,30 @@ class DemoInfo:
     expect: str
     watch: str
     kind: str  # "scripted" | "video"
-    zones: dict = field(default_factory=dict)  # normalized polygons, display only
+    zones: dict = field(default_factory=dict)  # normalized polygon for the simulation overlay
     path: str | None = None
+
+    def video_file(self) -> Path | None:
+        """A real video for this demo: the built-in sample, or demo/<id>.mp4 if you added one (e.g. an AI-generated clip)."""
+        p = Path(self.path) if self.path else DEMO_DIR / f"{self.id}.mp4"
+        return p if p.is_file() else None
+
+    def is_scripted(self, mode: str) -> bool:
+        """Scripted = simulation: scene and features come from the scenario script, YOLO is not run."""
+        return self.kind == "scripted" and mode != "video"
+
+    def video_zones(self) -> dict:
+        """Zones applied when the video is analysed for real: demo/<id>.json -> {"danger": [[[x,y],..]], "rest": [...]}."""
+        f = DEMO_DIR / f"{self.id}.json"
+        if f.is_file():
+            try:
+                raw = json.loads(f.read_text())
+                ok = lambda polys: [p for p in polys if isinstance(p, list) and len(p) >= 3  # noqa: E731
+                                    and all(isinstance(q, list) and len(q) == 2 and all(0 <= v <= 1 for v in q) for q in p)]
+                return {k: ok(raw.get(k, [])) for k in ("danger", "rest")}
+            except (OSError, ValueError, TypeError, AttributeError):
+                return {}
+        return {k: [v] for k, v in self.zones.items()} if self.kind == "video" else {}
 
 
 DEMOS: dict[str, DemoInfo] = {d.id: d for d in [
@@ -128,7 +151,7 @@ class ScriptedDemo:
             self._machine(img, e.box, backlit)
         for w in f.workers:
             self._person(img, w, backlit)
-        cv2.putText(img, f"DEMO  scenario {self.sid}", (20, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (50, 50, 50), 2, cv2.LINE_AA)
+        cv2.putText(img, f"SIMULATION  scenario {self.sid}", (20, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (50, 50, 50), 2, cv2.LINE_AA)
         return img
 
     @staticmethod

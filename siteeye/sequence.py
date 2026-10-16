@@ -12,7 +12,7 @@ from .config import Settings
 from .schemas import (EquipmentFeatures, EquipmentSummary, FrameFeatures, Moment, PPEState, SequencePayload,
                        WorkerFeatures, WorkerTimeline)
 
-LABEL_KO = {"excavator": "굴착기", "forklift": "지게차", "crane hook": "크레인 훅"}
+LABEL_KO = {"excavator": "굴착기", "forklift": "지게차", "crane hook": "크레인 훅", "heavy machinery": "중장비"}
 _NOT_WORN = (PPEState.ABSENT, PPEState.HELD, PPEState.UNCERTAIN)
 
 

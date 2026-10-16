@@ -17,7 +17,7 @@ from .config import Polygon, Settings
 from .schemas import (BBox, Detection, EquipmentFeatures, EquipmentRelation, FrameFeatures, Keypoint, PPEItem,
                       PPEState, RiskAssessment, WorkerFeatures)
 
-EQUIPMENT = {"excavator", "forklift", "crane hook"}
+EQUIPMENT = {"excavator", "forklift", "crane hook", "heavy machinery"}
 STRUCTURES = {"ladder", "scaffolding"}
 _NOSE, _L_EYE, _R_EYE, _L_SH, _R_SH, _L_WR, _R_WR, _L_HIP, _R_HIP = 0, 1, 2, 5, 6, 9, 10, 11, 12
 

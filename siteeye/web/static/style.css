@@ -119,6 +119,15 @@ button.ghost:hover:not(:disabled), .zbtn:hover { background: var(--line); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; overflow-y: auto; }
 .chips span:not(.none) { background: #2b2410; border: 1px solid #6b5518; color: #f6cf62; padding: 2px 9px; border-radius: 999px; font-size: 12px; }
 
+.modes { border: 1px solid var(--line); border-radius: 8px; margin: 10px 0 0; padding: 4px 10px 6px; }
+.modes legend { color: var(--muted); font-size: 12px; padding: 0 5px; }
+.modes .radio small { margin-left: 2px; }
+.demo .chips2 { display: flex; gap: 5px; margin-top: 4px; }
+.demo .chip2 { font-size: 10.5px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-style: normal; }
+.demo .chip2.sim { color: #f6cf62; border-color: #6b5518; } .demo .chip2.real { color: #7ee294; border-color: #28603a; }
+.simbadge { position: absolute; top: 10px; right: 10px; max-width: 46%; padding: 4px 10px; border-radius: 7px; font-size: 12px; font-weight: 600; backdrop-filter: blur(4px); text-align: right; }
+.simbadge.sim { background: rgba(43, 36, 16, .88); border: 1px solid #6b5518; color: #f6cf62; }
+.simbadge.real { background: rgba(18, 38, 26, .88); border: 1px solid #28603a; color: #7ee294; }
 .foot { display: flex; align-items: center; gap: 14px; padding: 7px 18px; border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; color: var(--muted); }
 .foot .sp { flex: 1; } .foot a { color: var(--accent); text-decoration: none; } .foot a:hover { text-decoration: underline; }
 .linklike { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 12px; }

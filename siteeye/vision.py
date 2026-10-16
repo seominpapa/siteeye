@@ -26,6 +26,9 @@ _ALIASES = {
     "safety vest": "safety vest", "vest": "safety vest", "no safety vest": "no safety vest",
     "safety hook": "safety hook", "hook": "safety hook",
     "safety harness lanyard": "harness lanyard", "harness lanyard": "harness lanyard", "lanyard": "harness lanyard",
+    # class names used by common construction-safety datasets (Roboflow / Hugging Face PPE models)
+    "machinery": "heavy machinery", "heavy machinery": "heavy machinery", "heavy equipment": "heavy machinery",
+    "safety helmet": "hard hat", "no safety helmet": "no hard hat", "no vest": "no safety vest",
 }
 
 
@@ -139,6 +142,7 @@ class HybridVisionExtractor:
     def __init__(self, tracks: dict[str, VisionTrack], aux_every: int):
         self.tracks, self.aux_every = tracks, max(1, aux_every)
         self._aux_last: list[Detection] = []
+        self.slot = tracks.get("A")  # the per-session pose model, so a pool can take it back after the session
 
     @property
     def active(self) -> str:
@@ -176,34 +180,49 @@ class HybridVisionExtractor:
             return []
 
 
+PRECISION_TRACKS = {"fast": "A", "accurate": "A,B", "full": "A,B,C"}  # web UI precision -> tracks
+
+
+def weights_available(name: str, models_dir: Path) -> bool:
+    """True if a weights file is already on disk (explicit path or inside models_dir)."""
+    p = Path(name)
+    return p.exists() or (models_dir / p.name).exists()
+
+
 class VisionModelRegistry:
-    """Factory: builds the extractor for the tracks requested in settings (SITEEYE_TRACKS=A,B,C)."""
+    """Factory: builds tracks and extractors. Tracks B and C are stateless, so one instance can serve many sessions;
+    only track A (ByteTrack keeps its state inside the model) must be built per concurrent session."""
+
+    @staticmethod
+    def build_track(key: str, st: Settings, device: str) -> VisionTrack | None:
+        try:
+            if key == "A":
+                w = ensure_weights(st.pose_weights, st.models_dir)
+                return PoseTrackA(w, device, st.imgsz, st.conf_floor) if w else None
+            if key == "B":
+                w = ensure_weights(st.world_weights, st.models_dir)
+                return WorldTrackB(w, st.world_prompts, device, st.imgsz, st.conf_floor) if w else None
+            if key == "C":
+                w = ensure_weights(st.ppe_weights, st.models_dir)  # custom weights: never downloaded, only used if present
+                if w:
+                    return PPETrackC(w, device, st.imgsz, st.conf_floor)
+                log.warning("track C skipped: %s not found (put your PPE weights in %s)", st.ppe_weights, st.models_dir)
+                return None
+            log.warning("unknown track %r ignored", key)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("track %s unavailable: %s", key, exc)
+        return None
 
     @staticmethod
     def build(st: Settings) -> HybridVisionExtractor:
+        """Extractor for the tracks listed in settings (SITEEYE_TRACKS=A,B,C), used by the CLI."""
         device = pick_device(st.device)
         wanted = [t.strip().upper() for t in st.tracks.split(",") if t.strip()]
         tracks: dict[str, VisionTrack] = {}
         for key in wanted:
-            try:
-                if key == "A":
-                    w = ensure_weights(st.pose_weights, st.models_dir)
-                    if w:
-                        tracks["A"] = PoseTrackA(w, device, st.imgsz, st.conf_floor)
-                elif key == "B":
-                    w = ensure_weights(st.world_weights, st.models_dir)
-                    if w:
-                        tracks["B"] = WorldTrackB(w, st.world_prompts, device, st.imgsz, st.conf_floor)
-                elif key == "C":
-                    w = ensure_weights(st.ppe_weights, st.models_dir)  # custom: only used if the file exists
-                    if w:
-                        tracks["C"] = PPETrackC(w, device, st.imgsz, st.conf_floor)
-                    else:
-                        log.warning("track C skipped: %s not found (put your PPE weights in %s)", st.ppe_weights, st.models_dir)
-                else:
-                    log.warning("unknown track %r ignored", key)
-            except Exception as exc:  # noqa: BLE001
-                log.warning("track %s unavailable: %s", key, exc)
+            t = VisionModelRegistry.build_track(key, st, device)
+            if t is not None:
+                tracks[key] = t
         if not tracks:
             raise RuntimeError("no vision track could be loaded; check weights and SITEEYE_TRACKS")
         log.info("vision tracks active: %s on %s", ",".join(tracks), device)

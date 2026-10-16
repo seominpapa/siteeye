@@ -8,6 +8,7 @@ Public mode : every visitor gets an isolated session; concurrent sessions, per-I
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 import time
 from collections import OrderedDict, defaultdict, deque
@@ -16,7 +17,9 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from ..config import Settings
-from ..vision import HybridVisionExtractor, VisionModelRegistry
+from ..vision import PRECISION_TRACKS, HybridVisionExtractor, VisionModelRegistry, pick_device
+
+log = logging.getLogger("siteeye.sessions")
 
 if TYPE_CHECKING:
     from .runner import AnalysisRunner
@@ -36,9 +39,9 @@ class SessionManager:
         self._demo_done: OrderedDict[str, set[str]] = OrderedDict()  # visitor id -> demos already run
         self._day, self.day_calls = date.today(), 0
         self._lock = threading.Lock()
-        self._free: list[HybridVisionExtractor] = []
+        self._free_a: list = []  # idle pose models (one per concurrent session)
         self._built = 0
-        self._cache: dict[str, HybridVisionExtractor] = {}
+        self._aux: dict[str, object] = {}  # shared tracks B / C (None = unavailable)
 
     # ------------------------------------------------------------------ sessions
 
@@ -120,30 +123,41 @@ class SessionManager:
 
     # ------------------------------------------------------------------ vision extractors (call from the pool thread)
 
+    def _aux_track(self, key: str):
+        """Tracks B and C are stateless: built once, then shared by every session (all inference runs on one thread)."""
+        if key not in self._aux:
+            self._aux[key] = VisionModelRegistry.build_track(key, self.st, pick_device(self.st.device))
+        return self._aux[key]
+
     def acquire_extractor(self, precision: str) -> HybridVisionExtractor:
+        """Per-session extractor: its own pose model + tracker (track A) and the shared B/C tracks for the chosen precision."""
+        keys = PRECISION_TRACKS.get(precision, "A").split(",")
         with self._lock:
-            if not self.public:
-                tracks = "A" if precision == "fast" else "A,B"
-                if tracks not in self._cache:
-                    self._cache[tracks] = VisionModelRegistry.build(self.st.model_copy(update={"tracks": tracks}))
-                ex = self._cache[tracks]
-                ex.reset()
-                return ex
-            if self._free:
-                ex = self._free.pop()
-                ex.reset()
-                return ex
-            if self._built >= self.st.max_sessions:
-                raise Busy("처리 슬롯이 모두 사용 중입니다. 잠시 후 다시 시도해 주세요.")
-            self._built += 1
-        try:  # public mode runs track A only: one pose model per slot keeps the CPU/GPU budget predictable
-            return VisionModelRegistry.build(self.st.model_copy(update={"tracks": "A"}))
+            slot = self._free_a.pop() if self._free_a else None
+            if slot is None:
+                if self.public and self._built >= self.st.max_sessions:
+                    raise Busy("처리 슬롯이 모두 사용 중입니다. 잠시 후 다시 시도해 주세요.")
+                self._built += 1
+        try:
+            if slot is None:
+                slot = VisionModelRegistry.build_track("A", self.st, pick_device(self.st.device))
+                if slot is None:
+                    raise RuntimeError("pose weights could not be loaded")
+            tracks = {"A": slot}
+            for k in keys[1:]:
+                t = self._aux_track(k)
+                if t is not None:
+                    tracks[k] = t
         except Exception:
             with self._lock:
                 self._built -= 1
             raise
+        ex = HybridVisionExtractor(tracks, self.st.aux_every)
+        ex.reset()  # fresh ByteTrack state for the new visitor
+        log.info("extractor ready: tracks %s (requested %s)", ex.active, precision)
+        return ex
 
     def release_extractor(self, ex: HybridVisionExtractor | None) -> None:
-        if ex is not None and self.public:
+        if ex is not None and ex.slot is not None:
             with self._lock:
-                self._free.append(ex)
+                self._free_a.append(ex.slot)

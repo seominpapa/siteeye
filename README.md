@@ -18,7 +18,7 @@
 |---|---|---|
 | **Track A** (기본) | `yolo11m-pose.pt` (Ultralytics YOLO11 medium pose) + ByteTrack | 작업자 탐지·추적(`track_id`)과 17개 관절 키포인트. 상체 기울기, 보행 속도, 시선 방향, 정지 시간 계산의 기반 |
 | **Track B** (선택, 정밀 모드) | `yolov8s-worldv2.pt` (YOLO-World v2 small, 제로샷) | 별도 학습 없이 프롬프트로 건설 현장 객체 탐지: `hard hat`, `safety vest`, `safety harness lanyard`, `excavator`, `forklift`, `crane hook`, `ladder`, `scaffolding`, `open manhole`. 처음 실행 시 CLIP 텍스트 인코더(약 340MB)를 내려받음 |
-| **Track C** (선택) | `custom_ppe.pt` (사용자 제공 PPE 파인튜닝 모델) | 소형 안전장구(`Hardhat`, `No-Hardhat`, `Safety-Hook` 등) 인식률 보강. 파일이 없으면 자동으로 건너뜀 |
+| **Track C** (선택) | `models/custom_ppe.pt` (사용자 제공 PPE 파인튜닝 모델, 저장소에 미포함) | 소형 안전장구(`Hardhat`, `No-Hardhat`, `Safety-Hook`, `machinery` 등) 인식률 보강. 파일이 없으면 자동으로 건너뜀. 점검: `python scripts/check_ppe_model.py models/custom_ppe.pt` |
 | **의사결정** | **Jev `jev-1.14.0`** (TypeSafe AI System One, `POST /v1/systemone`) | YOLO가 요약한 **텍스트 시퀀스**를 받아 ① 사고 전조 확률(`noul`) ② 위험 점수 0~5(`score`) ③ 권고 조치(`choice`)를 반환. 위험 정황인데 안전장구 인식이 불확실할 때만 ROI 이미지를 함께 보내 ④ 위험 영역 박스(`box`)를 받음 |
 
 - **Jev는 영상을 직접 보는 비전 모델이 아닙니다.** 평소에는 텍스트 상태(약 1.4~2.3k 토큰)만 보내고, 이미지는 폴백일 때만 사용합니다(약 4.2k 토큰). 모델은 `jev-latest`(현재 1.13)가 아니라 `jev-1.14.0`으로 **고정**합니다. Box 질문이 1.14에서만 되기 때문입니다.
@@ -156,12 +156,27 @@ python main.py --source site.mp4      # 웹 없이 터미널에서 영상/RTSP/�
 
 1. 왼쪽 **데모** 탭에서 시나리오를 고르고 **분석 시작**을 누릅니다.
 2. 5종: ① 휴게구역 안전모 탈착(정상 판단) ② 굴착기 접근 + 작업자 등 돌림(즉시 조치) ③ 고소 작업 안전고리 미결속(추락 전조) ④ 역광으로 안전모 인식 저하(이미지 폴백) ⑤ 실제 영상(YOLO 실처리).
+   - **①~④는 기본이 "시뮬레이션"** 입니다. 장면을 그려 넣고 거리·신뢰도 같은 탐지값을 시나리오로 정한 것이라 YOLO는 실행되지 않으며, 영상 위에 **시뮬레이션 배지**가 표시됩니다. Jev 호출·시퀀스·조치 분기는 실제 코드가 돕니다.
+   - `demo/s1.mp4` ~ `s4.mp4` (AI 생성 영상 등)를 넣으면 **"영상 실처리"** 를 선택해 YOLO가 실제로 탐지한 결과로 볼 수 있습니다. 영상 제작 프롬프트는 [docs/DEMO_VIDEO_PROMPTS.md](docs/DEMO_VIDEO_PROMPTS.md), 파일·구역 규칙은 [demo/README.md](demo/README.md).
 3. 영상 위에는 작업자·장비 박스와 인식 결과가, 하단 상황판에는 현재 상태·조치 사항·5초 행동 시퀀스·위험 요인이 실시간으로 표시됩니다.
 
 ### 웹캠
 
 - **이 브라우저의 웹캠 (권장)**: **웹캠** 탭 → 기본 선택 → 분석 시작 → 브라우저의 카메라 권한 허용. 영상은 이 PC의 서버로만 전송됩니다(`localhost`에서만 카메라 사용 가능).
 - **서버에 연결된 카메라**: "서버에 연결된 카메라" → **카메라 검색**으로 번호 선택. macOS에서는 서버를 실행한 터미널 앱에 카메라 권한(시스템 설정 → 개인정보 보호 및 보안 → 카메라)이 있어야 열립니다. 터미널 CLI는 `python main.py --source 0 --show`.
+
+### 비전 정밀도 (Track A / B / C)
+
+왼쪽 패널의 **비전 정밀도**가 어떤 모델을 돌릴지 정합니다. 웹캠·CCTV·영상 실처리 모두 적용됩니다.
+
+| 선택 | 트랙 | 설명 |
+|---|---|---|
+| 빠름 | A | 사람 탐지·추적·자세 (안전모·장비는 탐지하지 않음) |
+| 정밀 | A+B | + 제로샷으로 안전모·조끼·안전고리·굴착기 등 (공개 모드 기본값) |
+| 최대 | A+B+C | + 현장 PPE 모델. `models/custom_ppe.pt` 가 있을 때만 선택 가능 |
+
+- **Track C 준비**: 건설 안전용으로 학습된 YOLO 가중치(Roboflow Universe, Hugging Face 등)를 `models/custom_ppe.pt` 로 두고 `python scripts/check_ppe_model.py models/custom_ppe.pt` 로 클래스가 어떻게 매핑되는지 확인합니다. 헬멧(`Hardhat`/`No-Hardhat`), 조끼, `Safety-Hook`, `machinery` 클래스가 쓰입니다. **`.pt` 파일은 로드할 때 코드가 실행될 수 있으니 신뢰할 수 있는 출처의 파일만** 쓰고, 해당 모델의 라이선스도 확인하세요. 가중치는 저장소에 올리지 않습니다(`.gitignore`).
+- 같은 PC에서 A/B/C 조합을 터미널로 지정하려면 `--tracks A,B,C`.
 
 ### CCTV (RTSP / HTTP)
 
@@ -205,6 +220,7 @@ python main.py --web --public        # 127.0.0.1 에서만 열리고, Cloudflare
 | 웹캠 | **방문자 자신의 웹캠**을 브라우저가 권한 요청 후 서버로 업로드해 분석 (HTTPS 필요) |
 | 데모 | 각 데모는 방문자마다 **처음 한 번은 사용량 한도와 관계없이 실행 가능**. 같은 데모 반복은 시간당 한도에 포함 |
 | 제한 | 세션 3분, 세션당 Jev 200회, 하루 4000회(초과 시 오프라인 대체 응답기로 표시), IP당 시간당 6회 |
+| 비전 | 정밀도 선택 지원, 기본 **정밀(A+B)**. 방문자마다 별도 포즈 모델(추적 상태 분리) + **B/C는 전 세션이 공유**. 현장 PPE 모델(`custom_ppe.pt`)이 있으면 "최대"(A+B+C) 선택 가능 |
 | 저장 | **영상·이미지를 디스크에 쓰지 않음.** 스냅샷도 방문자 브라우저 메모리로만 전달 |
 | 차단 | CCTV 주소 입력, 서버 카메라(서버가 임의 주소에 접속하는 것을 막기 위함). CCTV는 소스를 받아 로컬에서 실행 |
 | 화면 | 시작 전 안내·동의, 남은 시간, 소스 코드(AGPL-3.0) 링크 |

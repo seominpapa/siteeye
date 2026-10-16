@@ -3,7 +3,7 @@ const $ = (id) => document.getElementById(id);
 const cv = $("cv"), ctx = cv.getContext("2d");
 
 const KO = {
-  label: { excavator: "굴착기", forklift: "지게차", "crane hook": "크레인 훅" },
+  label: { excavator: "굴착기", forklift: "지게차", "crane hook": "크레인 훅", "heavy machinery": "중장비" },
   motion: { approaching: "접근 중", receding: "멀어지는 중", moving: "이동 중", stationary: "정지" },
   state: { idle: "대기", starting: "준비 중", connecting: "연결 중", running: "분석 중", error: "오류" },
 };
@@ -72,15 +72,41 @@ document.querySelectorAll("input[name=camKind]").forEach((r) => r.addEventListen
 }));
 const camKind = () => document.querySelector("input[name=camKind]:checked").value;
 
+const demoOf = (id) => S.demos.find((d) => d.id === id);
+const demoMode = () => document.querySelector("input[name=demoMode]:checked").value;
+
+// scripted demos can run as a simulation or, if demo/<id>.mp4 exists, as a real video through the vision models
+function applyDemoMode(pick) {
+  const d = demoOf(S.demo); if (!d) return;
+  const scripted = d.kind === "scripted";
+  $("demoMode").hidden = !scripted;
+  const vid = document.querySelector("input[name=demoMode][value=video]"), sim = document.querySelector("input[name=demoMode][value=sim]");
+  vid.disabled = !d.has_video;
+  vid.parentElement.querySelector("small").textContent = d.has_video ? "YOLO가 실제로 탐지" : "영상 파일 없음 (demo/" + d.id + ".mp4)";
+  if (pick) (d.has_video ? vid : sim).checked = true;
+  if (!d.has_video) sim.checked = true;
+}
+
 function renderDemos() {
   const box = $("demoList"); box.replaceChildren();
   S.demos.forEach((d) => {
     const b = el("button", "demo" + (S.demo === d.id ? " on" : ""));
     b.type = "button"; b.append(el("b", null, d.title), el("span", null, d.expect));
-    if (S.done.has(d.id)) b.append(el("em", "done", "✓ 실행함"));
-    b.addEventListener("click", () => { S.demo = d.id; renderDemos(); $("demoWatch").textContent = d.watch; });
+    const chips = el("div", "chips2");
+    if (d.kind === "scripted") { chips.append(el("em", "chip2 sim", "시뮬레이션")); if (d.has_video) chips.append(el("em", "chip2 real", "실제 영상 있음")); }
+    else chips.append(el("em", "chip2 real", "실제 YOLO"));
+    if (S.done.has(d.id)) chips.append(el("em", "chip2", "✓ 실행함"));
+    b.append(chips);
+    b.addEventListener("click", () => { S.demo = d.id; renderDemos(); $("demoWatch").textContent = d.watch; applyDemoMode(true); });
     box.append(b);
   });
+}
+
+function updateBadge(st) {
+  const b = $("simBadge");
+  if (st.state !== "running" || st.source !== "demo" || st.sim == null) { b.hidden = true; return; }
+  b.hidden = false; b.className = "simbadge " + (st.sim ? "sim" : "real");
+  b.textContent = st.sim ? "시뮬레이션 영상 · 박스와 수치는 시나리오로 정한 값" : "영상 실처리 · YOLO가 실제로 탐지한 결과";
 }
 
 $("probeBtn").addEventListener("click", async () => {
@@ -116,7 +142,16 @@ $("startBtn").addEventListener("click", async () => {
     const precision = $("precision").value, loop = $("loop").checked;
     if (S.tab === "demo") {
       if (!S.demo) return msg("데모 시나리오를 선택하세요.", true);
-      await api("/api/start", { kind: "demo", demo_id: S.demo, precision, loop });
+      const mode = demoOf(S.demo).kind === "scripted" ? demoMode() : "video";
+      try {
+        await api("/api/start", { kind: "demo", demo_id: S.demo, demo_mode: mode, precision, loop });
+      } catch (e) {
+        if (mode === "video" && demoOf(S.demo).kind === "scripted") { // slots busy: the simulation never needs one
+          document.querySelector("input[name=demoMode][value=sim]").checked = true;
+          throw new Error(e.message + " 처리 방식을 '시뮬레이션'으로 바꿔 두었습니다. 다시 시작해 보세요.");
+        }
+        throw e;
+      }
       S.done.add(S.demo); renderDemos();
     } else if (S.tab === "cctv") {
       const url = $("cctvUrl").value.trim();
@@ -183,7 +218,7 @@ function onText(m) {
 }
 
 function setStatus(m) {
-  S.status = m;
+  S.status = m; updateBadge(m);
   if (m.state === "starting") resetBoard(); // new run: drop the previous run's actions and sequence
   $("stateText").textContent = KO.state[m.state] || m.state;
   $("statePill").className = "pill " + m.state;
@@ -325,6 +360,12 @@ document.querySelectorAll(".zbtn").forEach((b) => b.addEventListener("click", ()
   cv.classList.toggle("drawing", !!S.drawing);
 }));
 $("zoneClear").addEventListener("click", () => { S.zones = { danger: [], rest: [] }; S.draft = []; finishDrawing(false); pushZones(); });
+$("zoneCopy").addEventListener("click", async () => {
+  const round = (polys) => polys.map((p) => p.map(([x, y]) => [Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000]));
+  const text = JSON.stringify({ danger: round(S.zones.danger), rest: round(S.zones.rest) });
+  try { await navigator.clipboard.writeText(text); msg("구역 JSON을 복사했습니다. demo/<id>.json 으로 저장하세요."); }
+  catch (_) { msg(text); } // clipboard blocked: show the text instead
+});
 const norm = (e) => { const r = cv.getBoundingClientRect(); return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))]; };
 cv.addEventListener("click", (e) => { if (S.drawing) { S.draft.push(norm(e)); redraw(); } });
 cv.addEventListener("dblclick", () => finishDrawing(true));
@@ -362,6 +403,10 @@ setInterval(() => {
       document.querySelectorAll(".tab").forEach((t) => (t.style.flex = "1"));
     }
     S.demos = info.demos; S.demo = info.demos[0]?.id || null; renderDemos(); $("demoWatch").textContent = info.demos[0]?.watch || "";
+    applyDemoMode(true);
+    const prec = $("precision"); prec.value = info.default_precision || "fast";
+    prec.querySelector("option[value=full]").disabled = !(info.precisions && info.precisions.full);
+    if (!(info.precisions && info.precisions.full)) prec.querySelector("option[value=full]").textContent = "최대 (현장 PPE 모델 없음: models/custom_ppe.pt)";
     const p = $("jevPill");
     p.textContent = info.jev.live ? `Jev LIVE · ${info.jev.model}` : "Jev 오프라인 대체 응답기 (실제 모델 아님)";
     p.className = "pill " + (info.jev.live ? "live" : "sim");
