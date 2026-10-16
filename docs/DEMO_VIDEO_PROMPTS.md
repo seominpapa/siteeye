@@ -1,6 +1,6 @@
-# 데모 영상 ①~④ AI 생성 프롬프트 (각 10초)
+# 데모 영상 ①~③ AI 생성 프롬프트 (각 10초)
 
-웹앱의 데모 ①~④는 지금 **시뮬레이션**(그려 넣은 장면 + 시나리오로 정한 탐지값)입니다. 아래 프롬프트로 만든 10초 영상을 `demo/s1.mp4` ~ `demo/s4.mp4` 로 넣으면, 화면에서 **"영상 실처리"** 를 선택해 같은 영상을 **YOLO가 실제로 탐지**한 결과로 볼 수 있습니다. 파일이 없는 데모는 계속 시뮬레이션으로 동작합니다.
+웹앱의 데모 ①~③은 **시뮬레이션**(그려 넣은 장면 + 시나리오로 정한 탐지값)입니다. 아래 프롬프트로 만든 10초 영상을 `demo/s1.mp4` ~ `demo/s3.mp4` 로 넣으면, 화면에서 **"영상 실처리"** 를 선택해 같은 영상을 **YOLO가 실제로 탐지**한 결과로 볼 수 있습니다. 파일이 없는 데모는 계속 시뮬레이션으로 동작합니다.
 
 > 영상 실처리에서는 모델이 실제로 본 것만 판단에 쓰입니다. AI 영상은 안전모가 작게 나오거나 장비 모양이 다르면 탐지가 안 될 수 있어서, **의도한 결과(예: ② 즉시 조치)가 그대로 나오지 않을 수 있습니다.** 이 경우 프롬프트를 조정해 다시 생성하거나 시뮬레이션을 함께 보여 주세요.
 
@@ -78,18 +78,13 @@ Realistic documentary footage from a fixed construction-site surveillance camera
 
 ---
 
-## ④ 역광으로 안전모가 안 보이는 상황에서 장비가 접근 (이미지 폴백)
+## (참고) 역광 + 장비 접근 영상: 현재 데모에서 제외
 
-**의도**: 해를 정면으로 받는 역광 때문에 작업자가 실루엣으로 보이고 안전모 인식이 불확실한 상태에서 굴착기가 접근.
-**탐지 포인트**: 역광이어도 **작업자와 장비 윤곽은 구분**되어야 합니다. 안전모 인식 신뢰도가 낮게(0.25~0.55) 나오면 이미지 폴백이 자동 호출되고, 아예 탐지가 안 되면 폴백 조건이 안 걸립니다. 결과는 모델과 영상에 따라 달라집니다.
+처음에는 ④로 만들었지만, 생성된 영상에서 굴착기가 작업자보다 훨씬 멀리 있어(화면 크기 비율 0.92, 같은 깊이는 약 2.0) 거리가 신뢰되지 않았고 위험 정황이 잡히지 않아 **이미지 확인 시연이 되지 않아서** 데모에서 뺐습니다. 다시 만든다면 다음을 바꿔 보세요.
 
-```
-[공통 앞부분] Late afternoon on a construction site with the low sun directly in front of the camera, strong backlight and lens flare, so the people and machines appear as dark silhouettes against a bright hazy sky with overexposed highlights, the details of the helmet are hard to see. A single construction worker stands at the center-left of the frame, seen as a dark silhouette in side profile, a hard hat shape on his head barely visible, looking down at the ground, working with his hands. A large excavator silhouette on the right side of the frame slowly approaches him from right to left along the ground, getting steadily closer over the 10 seconds and stopping a few meters away from the worker. The worker's whole body from head to feet is visible, about 40 percent of the frame height. No other people. No collision. The camera never moves.
-```
-
-**구역 JSON**: 필요 없음.
-
----
+- 굴착기를 작업자와 **같은 깊이**에서 좌우로 가로질러 가깝게 접근시키기 (작업자 옆을 지나가는 구도)
+- 작업자의 얼굴과 안전모가 역광으로 어두워지되 **윤곽은 구분**되게
+- 나머지 조건은 위 공통 사양과 같습니다.
 
 ## 만든 뒤 확인하는 방법
 

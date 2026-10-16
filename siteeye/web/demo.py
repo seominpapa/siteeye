@@ -1,9 +1,8 @@
 """Demo sources for the web app.
 
-Scripted demos replay the four mock scenarios as a rendered 15 fps "video": the scene is drawn from the
+Scripted demos replay the mock scenarios (1-3 are offered in the web demo) as a rendered 15 fps "video": the scene is drawn from the
 scenario's features (interpolated between the 1-second keyframes), so the full pipeline downstream
 (sequence buffer, Jev call, routing) behaves exactly as with a camera. No vision model is involved.
-The street demo is a real video file that goes through the real YOLO tracks.
 """
 from __future__ import annotations
 
@@ -66,11 +65,6 @@ DEMOS: dict[str, DemoInfo] = {d.id: d for d in [
              {"danger": [[0.30, 0.50], [0.80, 0.50], [0.80, 0.98], [0.30, 0.98]]}),
     DemoInfo("s3", "③ 고소 작업 안전고리 미결속", "추락 전조 → 즉시 조치",
              "사다리 위에서 안전고리가 걸려 있지 않고 상체가 사다리 밖으로 기울어집니다. 장비가 없어 인터록은 제외됩니다.", "scripted"),
-    DemoInfo("s4", "④ 역광으로 안전모 인식 저하", "이미지 폴백 자동 트리거",
-             "안전모 인식 신뢰도가 0.32까지 떨어지고 장비가 접근하면, 텍스트 대신 ROI 이미지를 함께 보내 Jev가 직접 확인합니다.", "scripted"),
-    DemoInfo("street", "⑤ 실제 영상 (YOLO 실처리)", "실제 모델이 사람을 탐지·추적",
-             "버스 앞을 걷는 실제 영상입니다. YOLO 포즈 추적이 돌아가며 안전모·장비는 없어 위험 판단은 나오지 않는 것이 정상입니다.",
-             "video", {"rest": [[0.0, 0.4], [1.0, 0.4], [1.0, 1.0], [0.0, 1.0]]}, str(DEMO_DIR / "street_bus.mp4")),
 ]}
 
 

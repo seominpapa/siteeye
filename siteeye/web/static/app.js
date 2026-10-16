@@ -108,7 +108,7 @@ function updateBadge(st) {
   if (st.state !== "running" || st.source !== "demo" || st.sim == null) { b.hidden = true; return; }
   b.hidden = false; b.className = "simbadge " + (st.sim ? "sim" : "real");
   b.textContent = st.sim ? "시뮬레이션 영상 · 박스와 수치는 시나리오로 정한 값"
-    : (st.demo === "street" ? "샘플 영상 · YOLO가 실제로 탐지한 결과" : "AI 생성 영상 · YOLO가 실제로 탐지한 결과");
+    : "AI 생성 영상 · YOLO가 실제로 탐지한 결과";
 }
 
 $("probeBtn").addEventListener("click", async () => {
