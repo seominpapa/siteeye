@@ -12,13 +12,18 @@ Polygon = list[tuple[float, float]]  # normalized (0-1) image coordinates
 DEFAULT_WORLD_PROMPTS = [
     "person", "hard hat", "safety vest", "safety harness lanyard", "excavator",
     "forklift", "crane hook", "ladder", "scaffolding", "open manhole",
-    "yellow hard hat", "heavy construction vehicle",
+    "yellow hard hat", "heavy construction vehicle", "safety helmet", "orange safety vest", "high visibility vest",
 ]
 
 DEFAULT_SITE_NOTES = [
     "Taking off a hard hat inside a rest zone is normal behaviour, not a hazard by itself.",
     "Distances are monocular estimates (person height = 1.7 m), accuracy roughly +/-30%.",
     "A status of 'uncertain (conf: x)' means the vision model was unsure; use the surrounding time sequence to judge.",
+    "A helmet/vest/harness status of 'not_detected' only means the vision model did not find the item (back view, "
+    "backlight, occlusion, small size). It does NOT mean the worker has none. 'not_measured' means no PPE model was "
+    "running. Do not conclude that PPE is missing without other evidence.",
+    "The harness status from the vision model is unreliable; judge it from the image whenever one is provided.",
+    "A machine with equipment.reliable=false is at a very different depth than the worker, so its distance is not trustworthy.",
 ]
 
 
@@ -52,6 +57,10 @@ class Settings(BaseModel):
 
     # --- geometry ---
     person_height_m: float = 1.7
+    # A machine of known real height that looks much smaller than that height predicts is farther away than the worker
+    # (measured: excavator/worker pixel-height ratio 2.0 at the same depth, 0.92 when it stood ~2x farther).
+    depth_ratio_max: float = 1.5
+    ppe_flag_p: float = 0.7  # Jev image answer: P(lanyard unattached) >= this, or P(helmet on) <= 1 - this, raises a review
     near_distance_m: float = 4.0
     ttc_warn_s: float = 4.0
     ttc_urgent_s: float = 3.0

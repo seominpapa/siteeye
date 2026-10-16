@@ -305,7 +305,7 @@ class AnalysisRunner:
             if not scripted:
                 self._set_status("starting", "비전 모델을 불러오는 중… (처음에는 수십 초 걸릴 수 있습니다)")
                 self._ex = await loop.run_in_executor(self.mgr.pool, self.mgr.acquire_extractor, req.precision)
-                proc = SpatialFeatureProcessor(self.st)
+                proc = SpatialFeatureProcessor(self.st, ppe_model=any(k in self._ex.tracks for k in ("B", "C")))
                 why = {"B": "제로샷 안전장구 모델(Track B)을 불러오지 못했습니다. git과 인터넷 연결, 서버 로그를 확인하세요.",
                        "C": "현장 PPE 모델(Track C)을 불러오지 못했습니다. models/custom_ppe.pt 를 확인하세요."}
                 for k in self._ex.missing:
@@ -421,7 +421,7 @@ class AnalysisRunner:
             "tokens_in": d.usage.input_tokens, "tokens_out": d.usage.output_tokens, "model": d.model, "live": self.live,
             "reasons": a.reasons, "snapshot": snap,
             "narratives": [{"id": x.track_id, "text": x.narrative} for x in seq.workers],
-            "roi_box": None if d.roi_box is None else _norm(d.roi_box, w, h), "roi_conf": d.roi_conf,
+            "roi_box": None if d.roi_box is None else _norm(d.roi_box, w, h), "roi_conf": d.roi_conf, "ppe": d.ppe,
         })
         for act in acts:
             if act.kind != "monitor":

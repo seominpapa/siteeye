@@ -30,6 +30,8 @@ _ALIASES = {
     "machinery": "heavy machinery", "heavy machinery": "heavy machinery", "heavy equipment": "heavy machinery",
     "heavy construction vehicle": "heavy machinery", "construction machine": "heavy machinery",
     "yellow hard hat": "hard hat",
+    "orange safety vest": "safety vest", "high visibility vest": "safety vest", "hi vis vest": "safety vest",
+    "reflective vest": "safety vest",
     "safety helmet": "hard hat", "no safety helmet": "no hard hat", "no vest": "no safety vest",
 }
 

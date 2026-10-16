@@ -95,7 +95,7 @@ async def run_stream(st: Settings, a: argparse.Namespace) -> None:
     predictor = JevSafetyPredictor(st, client)
     pipe = SafetyPipeline(st, predictor, SafetyActionRouter(st), log_path=a.log)
     extractor = VisionModelRegistry.build(st)
-    proc = SpatialFeatureProcessor(st)
+    proc = SpatialFeatureProcessor(st, ppe_model=any(k in extractor.tracks for k in ("B", "C")))
     print(f"tracks={extractor.active} source={a.source} jev={'offline stand-in' if client else st.api_url}")
 
     def process(frame, ts: float, idx: int) -> FrameFeatures:

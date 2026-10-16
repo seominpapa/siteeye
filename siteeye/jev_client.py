@@ -70,7 +70,20 @@ def prepare_roi(frame: np.ndarray, box: BBox, margin: float = 0.25) -> RoiImage:
     return RoiImage(buf.tobytes(), tw, th, (float(x1), float(y1)), scale, (pad_l, pad_t))
 
 
-def build_questions(image_ref: str | None) -> dict:
+# PPE checks for the image fallback. Measured on the four demo clips: Jev answered helmet 48/48 and vest 24/24 correctly
+# from a worker crop, and the lanyard question 32/32 in English but only 27/32 in Korean, so these stay in English.
+def ppe_questions(ref: str, ladder: bool) -> dict:
+    qs = {
+        "ppe_helmet_on": NoulQuestion(instructions=f"In the evidence image ({ref}), the worker closest to the machinery or ladder is wearing a hard hat on his head right now."),
+        "ppe_vest_on": NoulQuestion(instructions=f"In the evidence image ({ref}), that worker is wearing a high-visibility vest."),
+    }
+    if ladder:
+        qs["ppe_lanyard_free"] = NoulQuestion(instructions=(
+            f"In the evidence image ({ref}), that worker has a safety harness lanyard hanging loose that is not attached to the ladder or any structure."))
+    return qs
+
+
+def build_questions(image_ref: str | None, ladder: bool = False) -> dict:
     qs: dict = {
         "is_imminent_hazard": NoulQuestion(
             instructions=("최근 5초간의 이동 궤적과 작업자 행동의 개연성을 볼 때, 향후 3초 이내에 협착·추락·실신 등 "
@@ -89,6 +102,7 @@ def build_questions(image_ref: str | None) -> dict:
                       "equipment_emergency_stop_interlock": "중장비 비상정지 인터록 발동"}),
     }
     if image_ref:
+        qs.update(ppe_questions(image_ref, ladder))
         qs["hazard_roi_box"] = BoxQuestion(
             instructions=f"가장 위험에 노출된 작업자 또는 미착용 안전장구의 위치 (image: {image_ref})")
     return qs
@@ -116,7 +130,8 @@ class JevSafetyPredictor:
             state["evidence_image"] = ref  # every asset must be referenced somewhere in the request
             assets = {ref: ImageAsset(format="jpg", data_base64=base64.b64encode(roi.jpeg).decode())}
             headers[IMAGES_HEADER] = "true"
-        req = JevRequest(state=state, model=self.st.model, questions=build_questions(ref), assets=assets)
+        ladder = any(w.moments and w.moments[-1].on_ladder for w in seq.workers)
+        req = JevRequest(state=state, model=self.st.model, questions=build_questions(ref, ladder), assets=assets)
         return req, headers
 
     # ------------------------------------------------------------------ call
@@ -162,8 +177,9 @@ class JevSafetyPredictor:
                                      roi.origin[1] + (y * roi.out_h - roi.pad[1]) / roi.scale)
             (x1, y1), (x2, y2) = to_frame(e.left, e.top), to_frame(e.right, e.bottom)
             roi_box, roi_conf = BBox(x1=x1, y1=y1, x2=x2, y2=y2), box.confidence
+        ppe = {k[4:]: clamp(v.noul, 0, 1) for k, v in a.items() if k.startswith("ppe_") and isinstance(v, NoulAnswer)}
         return JevDecision(
-            mode="image_fallback" if roi is not None else "text", p_hazard=clamp(hazard.noul, 0, 1),
+            mode="image_fallback" if roi is not None else "text", p_hazard=clamp(hazard.noul, 0, 1), ppe=ppe,
             risk_score=clamp(score.score, 0, 5) if isinstance(score, ScoreAnswer) else 0.0,
             action_plan=plan.choice if isinstance(plan, ChoiceAnswer) else "normal_monitoring",
             action_probs=plan.probabilities if isinstance(plan, ChoiceAnswer) else {},

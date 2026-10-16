@@ -66,6 +66,8 @@ def create_app(st: Settings, offline: bool = False) -> FastAPI:
         resp.headers["Content-Security-Policy"] = CSP
         if st.public:
             resp.headers["Cache-Control"] = "no-store" if request.url.path.startswith("/api") else "public, max-age=300"
+        else:  # local use: always pick up code changes after an update
+            resp.headers["Cache-Control"] = "no-cache"
         return resp
 
     def sid_of(request: Request) -> str:

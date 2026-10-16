@@ -72,15 +72,22 @@ class SafetyActionRouter:
         st = self.st
         base = dict(p_hazard=round(d.p_hazard, 3), risk_score=round(d.risk_score, 2), jev_action_plan=d.action_plan)
         why = f"P(yes)={d.p_hazard:.2f}, risk={d.risk_score:.1f}/5, jev plan={ACTIONS.get(d.action_plan, d.action_plan)}"
+        flags: list[str] = []  # PPE findings from Jev's own look at the image, only present in image fallback mode
+        if d.ppe.get("lanyard_free", 0.0) >= st.ppe_flag_p:
+            flags.append(f"안전고리 미연결 의심 (Jev 이미지 확인 {d.ppe['lanyard_free']:.0%})")
+        if "helmet_on" in d.ppe and d.ppe["helmet_on"] <= 1 - st.ppe_flag_p:
+            flags.append(f"안전모 미착용 의심 (Jev 이미지 확인 {1 - d.ppe['helmet_on']:.0%})")
+        if flags:
+            why += " | " + "; ".join(flags)
         if d.p_hazard >= st.p_immediate or d.risk_score >= st.risk_immediate:
             kinds = ["speaker_alert", "smartwatch_vibration"]
             if seq.equipment:  # nothing to stop for a fall-from-height with no machine in the scene
                 kinds.insert(0, "equipment_estop")
             acts = [Action(kind=k, tier="immediate", reason=why, **base) for k in kinds]
-        elif d.p_hazard >= st.p_review:
+        elif d.p_hazard >= st.p_review or flags:  # missing PPE in a risky context is reviewed by a person, never an automatic stop
             snap = self._save_snapshot(roi) if (roi and self.save_snapshots) else None
             acts = [Action(kind="dashboard_review", tier="review", reason=why, **base,
-                           payload={"sequence": seq.model_dump(mode="json"), "snapshot": snap,
+                           payload={"sequence": seq.model_dump(mode="json"), "snapshot": snap, "ppe": d.ppe,
                                     "roi_box": d.roi_box.model_dump() if d.roi_box else None})]
         else:
             return [Action(kind="monitor", tier="monitor", reason=why, **base)]

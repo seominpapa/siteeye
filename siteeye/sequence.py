@@ -106,21 +106,24 @@ class SequenceBuffer:
             ev.append(f"안전모 {w.helmet.status}")
         if w.on_ladder:
             if prev is None or not prev.on_ladder:
-                ev.append(f"사다리 {w.climb_height_m or 0:.1f}m 등반")
+                ev.append(f"사다리 {w.climb_height_m:.1f}m 등반" if w.climb_height_m is not None else "사다리 위 작업 (높이 추정 불가)")
             if w.harness.state is not PPEState.HOOKED and (prev is None or prev.harness.state is not w.harness.state):
-                ev.append({PPEState.UNHOOKED: "안전고리 미결속 상태", PPEState.NOT_DETECTED: "안전고리 확인 안 됨"}
-                          .get(w.harness.state, f"안전고리 {w.harness.status}"))
+                ev.append({PPEState.UNHOOKED: "안전고리 미결속 상태", PPEState.NOT_DETECTED: "안전고리 확인 안 됨",
+                           PPEState.NOT_MEASURED: "안전고리 측정 안 함"}.get(w.harness.state, f"안전고리 {w.harness.status}"))
         if w.torso_tilt_deg is not None and w.torso_tilt_deg >= 15:
             ev.append(f"상체 기울기 {w.torso_tilt_deg:.0f}도" + (" (사다리 외곽 이탈)" if w.torso_outside_ladder else ""))
         if rel is not None and rel.distance_m <= 8.0:
             name = LABEL_KO.get(rel.label, rel.label)
-            msg = f"{name} 거리 {rel.distance_m:.1f}m"
-            if rel.closing_speed_mps > 0.2:
-                msg += " 접근"
-            if rel.ttc_s is not None and rel.ttc_s <= 5.0:
-                msg += f", 예상 충돌 {rel.ttc_s:.1f}초 전"
+            if rel.reliable:
+                msg = f"{name} 거리 {rel.distance_m:.1f}m"
+                if rel.closing_speed_mps > 0.2:
+                    msg += " 접근"
+                if rel.ttc_s is not None and rel.ttc_s <= 5.0:
+                    msg += f", 예상 충돌 {rel.ttc_s:.1f}초 전"
+            else:  # the machine is at another depth: a 2D distance would only mislead
+                msg = f"{name} 화면상 근처 (깊이 차이가 커서 거리 불확실)"
             ev.append(msg)
-            if w.aware_of_equipment is False:
+            if w.aware_of_equipment is False and rel.reliable:
                 ev.append("작업자 시선이 장비 반대 방향 (장비 인지 못함)")
         return ev
 
@@ -136,7 +139,7 @@ class SequenceBuffer:
         if helmet or m.helmet_status.startswith("uncertain"):
             s.append(helmet or f"안전모 {m.helmet_status}")
         if m.on_ladder and m.harness_status != "hooked":
-            s.append("안전고리 " + {"unhooked": "미결속", "not_detected": "미확인"}.get(m.harness_status, m.harness_status))
+            s.append("안전고리 " + {"unhooked": "미결속", "not_detected": "확인 안 됨", "not_measured": "측정 안 함"}.get(m.harness_status, m.harness_status))
         return s
 
     @classmethod

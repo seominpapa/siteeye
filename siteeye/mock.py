@@ -166,6 +166,14 @@ def simulated_transport() -> httpx.MockTransport:
         answers = {"is_imminent_hazard": {"type": "noul", "noul": p},
                    "risk_score": {"type": "score", "score": round(p * 5, 2), "confidence": 0.7, "probabilities": {}},
                    "action_plan": {"type": "choice", "choice": plan, "confidence": 0.9, "probabilities": probs}}
+        w0 = (body["state"]["sequence"]["workers"] or [{"moments": [{}]}])[0]["moments"][-1]
+        asked = body.get("questions", {})
+        if "ppe_helmet_on" in asked:
+            answers["ppe_helmet_on"] = {"type": "noul", "noul": 0.05 if w0.get("helmet_status") in ("absent", "held_in_hand") else 0.93}
+        if "ppe_vest_on" in asked:
+            answers["ppe_vest_on"] = {"type": "noul", "noul": 0.9}
+        if "ppe_lanyard_free" in asked:
+            answers["ppe_lanyard_free"] = {"type": "noul", "noul": 0.86 if w0.get("on_ladder") and w0.get("harness_status") != "hooked" else 0.08}
         if has_image:
             answers["hazard_roi_box"] = {"type": "box", "box": {"top": 0.15, "bottom": 0.92, "left": 0.28, "right": 0.62}, "confidence": 0.8}
         return httpx.Response(200, json={"model": "jev-1.14.0", "answers": answers,

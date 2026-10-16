@@ -18,6 +18,7 @@ from .schemas import (BBox, Detection, EquipmentFeatures, EquipmentRelation, Fra
                       PPEState, RiskAssessment, WorkerFeatures)
 
 EQUIPMENT = {"excavator", "forklift", "crane hook", "heavy machinery"}
+EQUIP_HEIGHT_M = {"excavator": 3.0, "heavy machinery": 3.0, "forklift": 2.2}  # typical real heights, for the depth check
 STRUCTURES = {"ladder", "scaffolding"}
 _NOSE, _L_EYE, _R_EYE, _L_SH, _R_SH, _L_WR, _R_WR, _L_HIP, _R_HIP = 0, 1, 2, 5, 6, 9, 10, 11, 12
 
@@ -101,8 +102,9 @@ def awareness(facing: str, worker_foot: tuple[float, float], eq_box: BBox, frame
 
 
 class SpatialFeatureProcessor:
-    def __init__(self, st: Settings):
+    def __init__(self, st: Settings, ppe_model: bool = True):
         self.st = st
+        self.ppe_model = ppe_model  # False: only the pose model runs, so PPE is "not_measured" rather than "not_detected"
         self._ptrack = _CentroidTracker(base_id=1000)
         self._etrack = _CentroidTracker(base_id=1)
         self._wpos: dict[int, deque] = {}
@@ -171,12 +173,13 @@ class SpatialFeatureProcessor:
                 continue
             if d.box.inter(s.box) / max(d.box.area, 1.0) > 0.25 or s.box.rows(0, 1, grow_x=0.3).contains(gx, gy):
                 on_ladder = True
-                climb = max(0.0, s.box.y2 - gy) * mpp
+                # a ladder cut off by the bottom edge has an unknown base, so a height in metres would be a guess
+                climb = max(0.0, s.box.y2 - gy) * mpp if s.box.y2 < 0.97 * h else None
                 if sx is not None:
                     outside = bool(sx < s.box.x1 or sx > s.box.x2)
                 break
 
-        rel = self._nearest_equipment(tid, gx, gy, mpp, t, eq_items)
+        rel = self._nearest_equipment(tid, gx, gy, mpp, t, eq_items, h)
         aware = awareness(facing, (gx, gy), rel.box, h) if rel and rel.box else None
         return WorkerFeatures(track_id=tid, box=d.box, zone=zone, speed_mps=round(speed, 2),  # type: ignore[arg-type]
                               gait_variability=round(gait, 2), stationary_s=round(stationary, 1),
@@ -200,6 +203,8 @@ class SpatialFeatureProcessor:
         return PPEItem(state=good if conf >= self.st.conf_confident else PPEState.UNCERTAIN, conf=round(conf, 2))
 
     def _ppe(self, p: Detection, gear: list[Detection], structs: list[Detection]):
+        if not self.ppe_model:
+            return PPEItem(state=PPEState.NOT_MEASURED), PPEItem(state=PPEState.NOT_MEASURED), PPEItem(state=PPEState.NOT_MEASURED)
         head = p.box.rows(0.0, 0.30, grow_x=0.15, grow_y=0.10)  # top 30%: helmet
         torso = p.box.rows(0.25, 0.75, grow_x=0.10)  # middle: vest, harness
         body = p.box.rows(0.0, 1.0, grow_x=0.15, grow_y=0.05)
@@ -245,7 +250,7 @@ class SpatialFeatureProcessor:
 
     # ------------------------------------------------------------------ equipment relations
 
-    def _nearest_equipment(self, tid: int, gx: float, gy: float, mpp: float, t: float, eq_items) -> EquipmentRelation | None:
+    def _nearest_equipment(self, tid: int, gx: float, gy: float, mpp: float, t: float, eq_items, frame_h: int) -> EquipmentRelation | None:
         best: EquipmentRelation | None = None
         for eid, e in eq_items:
             b = e.box
@@ -259,9 +264,14 @@ class SpatialFeatureProcessor:
                     if t - t0 >= 0.25:
                         closing = (d0 - d) / (t - t0)
                     break
-            ttc = round(min(30.0, d / closing), 1) if closing > 0.3 else None
+            reliable = True  # is the machine at about the worker's depth? Compare its apparent size with its typical height
+            real_h = EQUIP_HEIGHT_M.get(e.label)
+            if real_h and b.h > 0 and b.y1 > 2 and b.y2 < frame_h - 2:  # a box cut by the frame edge says nothing about size
+                observed = b.h / max(self.st.person_height_m / mpp, 1.0)  # machine height in worker heights
+                reliable = (real_h / self.st.person_height_m) / observed <= self.st.depth_ratio_max
+            ttc = round(min(30.0, d / closing), 1) if closing > 0.3 and reliable else None
             rel = EquipmentRelation(eq_id=eid, label=e.label, distance_m=round(d, 1), closing_speed_mps=round(closing, 2),
-                                    ttc_s=ttc, box=b)
+                                    ttc_s=ttc, reliable=reliable, box=b)
             if best is None or rel.distance_m < best.distance_m:
                 best = rel
         return best
@@ -308,27 +318,35 @@ class SpatialFeatureProcessor:
 
 
 def assess(f: FrameFeatures, st: Settings) -> RiskAssessment:
-    """Cheap per-frame triage: is there a risky context, is it urgent, and is the vision evidence too weak to trust?"""
+    """Cheap per-frame triage: is there a risky context, is it urgent, and should Jev look at the image?
+
+    The image fallback needs BOTH a risky context and PPE the vision stack cannot vouch for: a helmet/vest seen with
+    low confidence (0.25-0.45), a helmet not found at all, a PPE model not running, or a harness not confirmed hooked
+    on a ladder. Small PPE is exactly what Jev verifies well from a crop (see docs).
+    """
     out = RiskAssessment()
     for w in f.workers:
         why: list[str] = []
         eq = w.nearest_equipment
-        if eq and eq.ttc_s is not None and eq.ttc_s <= st.ttc_warn_s:
+        if eq and eq.reliable and eq.ttc_s is not None and eq.ttc_s <= st.ttc_warn_s:
             why.append(f"worker {w.track_id}: {eq.label} TTC {eq.ttc_s:.1f}s")
             out.urgent |= eq.ttc_s <= st.ttc_urgent_s
-        elif eq and eq.distance_m <= st.near_distance_m and eq.closing_speed_mps > 0.2:
+        elif eq and eq.reliable and eq.distance_m <= st.near_distance_m and eq.closing_speed_mps > 0.2:
             why.append(f"worker {w.track_id}: {eq.label} {eq.distance_m:.1f}m and closing")
         if w.zone == "danger":
             why.append(f"worker {w.track_id}: in danger zone")
-        bad_hook = w.harness.state in (PPEState.UNHOOKED, PPEState.NOT_DETECTED, PPEState.UNCERTAIN)
-        if w.on_ladder and (w.climb_height_m or 0) >= 2.0 and bad_hook:
-            why.append(f"worker {w.track_id}: {w.climb_height_m:.1f}m up a ladder, harness not confirmed hooked")
+        unconfirmed = w.harness.state is not PPEState.HOOKED  # unhooked, not detected, uncertain or not measured
+        if w.on_ladder and (w.climb_height_m is None or w.climb_height_m >= 2.0) and unconfirmed:
+            height = "height unknown" if w.climb_height_m is None else f"{w.climb_height_m:.1f}m up"
+            why.append(f"worker {w.track_id}: on a ladder ({height}), harness not confirmed hooked")
         tilt = w.torso_tilt_deg or 0.0
         if (w.on_ladder and tilt >= 20) or tilt >= 60:
             why.append(f"worker {w.track_id}: torso tilt {tilt:.0f} deg")
             out.urgent = True
         out.reasons += why
-        weak = any(i.state is PPEState.UNCERTAIN and (i.conf or 0) < st.fallback_conf for i in (w.helmet, w.vest, w.harness))
-        if why and weak and out.fallback_worker is None:
+        low = lambda i: i.state is PPEState.UNCERTAIN and (i.conf or 0) < st.fallback_conf  # noqa: E731
+        helmet_weak = low(w.helmet) or w.helmet.state in (PPEState.NOT_DETECTED, PPEState.NOT_MEASURED)
+        harness_weak = w.on_ladder and unconfirmed
+        if why and (helmet_weak or low(w.vest) or harness_weak) and out.fallback_worker is None:
             out.fallback_worker = w.track_id
     return out

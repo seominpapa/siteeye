@@ -36,8 +36,8 @@ const S = {
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const hhmmss = (ts) => { const d = new Date(ts * 1000), p = (n) => String(n).padStart(2, "0"); return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
 const helmetKo = (s) => s.startsWith("uncertain") ? "불확실 " + (s.match(/[\d.]+/) || [""])[0]
-  : ({ worn: "착용", absent: "미착용", held_in_hand: "손에 파지", not_detected: "미확인" }[s] || s);
-const harnessKo = (s) => ({ hooked: "결속", unhooked: "미결속", not_detected: "미확인" }[s] || (s.startsWith("uncertain") ? "불확실" : s));
+  : ({ worn: "착용", absent: "미착용", held_in_hand: "손에 파지", not_detected: "못 찾음", not_measured: "측정 안 함" }[s] || s);
+const harnessKo = (s) => ({ hooked: "결속", unhooked: "미결속", not_detected: "못 찾음", not_measured: "측정 안 함" }[s] || (s.startsWith("uncertain") ? "불확실" : s));
 function reasonKo(r) {
   const m = r.match(/^worker (\d+): (.*)$/); if (!m) return r;
   const who = `작업자 #${m[1]}`, t = m[2], eq = (l) => KO.label[l] || l;
@@ -45,7 +45,8 @@ function reasonKo(r) {
   if ((x = t.match(/^(.+) TTC ([\d.]+)s$/))) return `${who}: ${eq(x[1])} 충돌 예상 ${x[2]}초`;
   if ((x = t.match(/^(.+) ([\d.]+)m and closing$/))) return `${who}: ${eq(x[1])} ${x[2]}m 접근 중`;
   if (t === "in danger zone") return `${who}: 위험구역 진입`;
-  if ((x = t.match(/^([\d.]+)m up a ladder/))) return `${who}: 사다리 ${x[1]}m 고소 작업, 안전고리 결속 미확인`;
+  if ((x = t.match(/^on a ladder \(([\d.]+)m up\)/))) return `${who}: 사다리 ${x[1]}m 고소 작업, 안전고리 결속 미확인`;
+  if (/^on a ladder \(height unknown\)/.test(t)) return `${who}: 사다리 위 작업(높이 불명), 안전고리 결속 미확인`;
   if ((x = t.match(/^torso tilt (\d+) deg$/))) return `${who}: 상체 기울기 ${x[1]}°`;
   return `${who}: ${t}`;
 }
@@ -302,7 +303,7 @@ function resetBoard() {
   $("actList").replaceChildren(); S.lastDecision = null; S.roi = null;
   $("actEmpty").hidden = false; $("actCount").textContent = "";
   $("lvl").className = "lvl idle"; $("lvlLabel").textContent = "대기 중";
-  ["pVal", "rVal", "planVal", "modeVal", "latVal"].forEach((i) => ($(i).textContent = "–"));
+  ["pVal", "rVal", "planVal", "modeVal", "latVal", "ppeVal"].forEach((i) => ($(i).textContent = "–"));
   document.querySelectorAll("#rBar i").forEach((i) => (i.className = ""));
   $("narr").replaceChildren(el("p", "none", "분석이 시작되면 작업자별 행동 흐름이 표시됩니다.")); setViewportLevel(null);
   $("alertBar").hidden = true;
@@ -325,6 +326,11 @@ function applyDecision(d) {
   $("rVal").textContent = d.risk.toFixed(1) + " / 5";
   document.querySelectorAll("#rBar i").forEach((b, i) => (b.className = d.risk > i ? (d.risk >= 4 ? "hi" : "on") : ""));
   $("planVal").textContent = d.plan_ko;
+  const ppe = d.ppe || {}, pc = (v) => Math.round(v * 100) + "%", bits = [];
+  if ("helmet_on" in ppe) bits.push("안전모 착용 " + pc(ppe.helmet_on));
+  if ("vest_on" in ppe) bits.push("조끼 착용 " + pc(ppe.vest_on));
+  if ("lanyard_free" in ppe) bits.push("안전고리 미연결 " + pc(ppe.lanyard_free));
+  $("ppeVal").textContent = bits.length ? bits.join(" · ") : "(이미지 확인 없음)";
   $("modeVal").textContent = d.mode === "image_fallback" ? "이미지 폴백 (멀티모달)" : "텍스트 시퀀스";
   $("latVal").textContent = `${d.latency_ms}ms · ${d.tokens_in.toLocaleString()}토큰${d.live ? "" : " · 대체응답"}`;
   setViewportLevel(l);

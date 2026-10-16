@@ -90,6 +90,7 @@ class PPEState(str, Enum):
     NOT_DETECTED = "not_detected"
     HOOKED = "hooked"
     UNHOOKED = "unhooked"
+    NOT_MEASURED = "not_measured"  # no PPE model is running (track A only): different from "looked and found nothing"
 
 
 class PPEItem(BaseModel):
@@ -110,7 +111,8 @@ class EquipmentRelation(BaseModel):
     label: str
     distance_m: float
     closing_speed_mps: float  # > 0 when the gap is shrinking
-    ttc_s: float | None = None  # time-to-collision, None if not closing
+    ttc_s: float | None = None  # time-to-collision, None if not closing or the distance is unreliable
+    reliable: bool = True  # False when the machine is at a very different depth than the worker (2D distance misleads)
     box: BBox | None = Field(default=None, exclude=True)
 
 
@@ -128,7 +130,7 @@ class WorkerFeatures(BaseModel):
     vest: PPEItem = Field(default_factory=PPEItem)
     harness: PPEItem = Field(default_factory=PPEItem)
     on_ladder: bool = False
-    climb_height_m: float | None = None
+    climb_height_m: float | None = None  # None when the ladder base is outside the frame (height cannot be estimated)
     torso_outside_ladder: bool | None = None
     nearest_equipment: EquipmentRelation | None = None
 
@@ -293,6 +295,7 @@ class JevDecision(BaseModel):
     action_probs: dict[str, float] = Field(default_factory=dict)
     roi_box: BBox | None = None  # mapped back to full-frame pixels
     roi_conf: float | None = None
+    ppe: dict[str, float] = Field(default_factory=dict)  # image fallback only: P(helmet_on), P(vest_on), P(lanyard_free)
     model: str = ""
     latency_ms: float = 0.0
     usage: Usage = Field(default_factory=Usage)
